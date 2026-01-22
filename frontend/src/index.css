@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* Minimal base adjustments */
+:root {
+  --container-max: 1280px;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow-x: hidden; /* Prevent accidental horizontal scroll */
+}
