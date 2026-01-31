@@ -64,7 +64,7 @@ export default function AdminAnalyticsPage() {
         <div>
           <p className="text-sm font-medium text-gray-600">{title}</p>
           <p className="text-2xl font-bold text-gray-900 mt-1">
-            {format === 'currency' ? `€${value.toLocaleString()}` : value.toLocaleString()}
+            {format === 'currency' ? `₹${value.toLocaleString()}` : value.toLocaleString()}
           </p>
           {change !== undefined && (
             <div className={`flex items-center mt-2 text-sm ${
@@ -152,7 +152,7 @@ export default function AdminAnalyticsPage() {
                     style={{ height: `${height}%`, minHeight: '20px' }}
                   ></div>
                   <span className="text-xs text-gray-500 mt-2">{data.month}</span>
-                  <span className="text-xs font-medium text-gray-900">€{(data.revenue / 1000).toFixed(0)}k</span>
+                  <span className="text-xs font-medium text-gray-900">₹{(data.revenue / 1000).toFixed(0)}k</span>
                 </div>
               )
             })}
@@ -219,7 +219,7 @@ export default function AdminAnalyticsPage() {
                 <img src={productImage} alt={product.name} className="w-10 h-10 rounded object-cover" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">{product.name}</p>
-                  <p className="text-xs text-gray-500">{product.sales} sales • €{product.revenue.toFixed(2)}</p>
+                  <p className="text-xs text-gray-500">{product.sales} sales • ₹{product.revenue.toFixed(2)}</p>
                 </div>
               </div>
               )

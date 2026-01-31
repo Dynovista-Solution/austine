@@ -90,7 +90,8 @@ export default function CartPage() {
             <h2 className="text-sm font-semibold text-gray-900 mb-4">Order Summary</h2>
             <dl className="text-sm space-y-2">
               <div className="flex justify-between"><dt className="text-gray-600">Subtotal</dt><dd className="font-medium text-gray-900">{formatINR(totals.subtotal)}</dd></div>
-              <div className="flex justify-between"><dt className="text-gray-600">Shipping</dt><dd className="text-gray-600">Calculated at checkout</dd></div>
+              <div className="flex justify-between"><dt className="text-gray-600">Tax (5% incl.)</dt><dd className="text-gray-600">{formatINR(totals.subtotal * (5 / 105))}</dd></div>
+              <div className="flex justify-between"><dt className="text-gray-600">Shipping</dt><dd className="text-gray-600">Included in price</dd></div>
             </dl>
             <div className="mt-4 flex justify-between border-t border-gray-200 pt-4 text-sm font-semibold text-gray-900">
               <span>Total</span>

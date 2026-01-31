@@ -12,7 +12,7 @@ export default function PrivacyPolicy() {
 
         <div className="mt-6 space-y-6 text-sm text-gray-700 leading-6">
           <p>
-            At AustineLifestyle, your privacy and trust are important to us. This policy explains how we collect,
+            At Austine Lifestyle LLP, your privacy and trust are important to us. This policy explains how we collect,
             use, and protect your personal information.
           </p>
 

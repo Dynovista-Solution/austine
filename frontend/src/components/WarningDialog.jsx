@@ -19,14 +19,35 @@ export default function WarningDialog({
       }
     }
 
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape)
-      document.body.style.overflow = 'hidden'
+    if (!isOpen) return
+
+    document.addEventListener('keydown', handleEscape)
+
+    // Lock scroll WITHOUT moving the page position
+    const scrollY = window.scrollY
+    const body = document.body
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
+
+    body.style.position = 'fixed'
+    body.style.top = `-${scrollY}px`
+    body.style.left = '0'
+    body.style.right = '0'
+    body.style.width = '100%'
+    if (scrollbarWidth > 0) {
+      body.style.paddingRight = `${scrollbarWidth}px`
     }
 
     return () => {
       document.removeEventListener('keydown', handleEscape)
-      document.body.style.overflow = 'unset'
+      
+      // Restore scroll position
+      body.style.position = ''
+      body.style.top = ''
+      body.style.left = ''
+      body.style.right = ''
+      body.style.width = ''
+      body.style.paddingRight = ''
+      window.scrollTo(0, scrollY)
     }
   }, [isOpen, onClose])
 

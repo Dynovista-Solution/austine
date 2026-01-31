@@ -8,7 +8,8 @@ import {
   ArrowRightOnRectangleIcon,
   Bars3Icon,
   XMarkIcon,
-  DocumentTextIcon
+  DocumentTextIcon,
+  ShieldCheckIcon
 } from '@heroicons/react/24/outline'
 import { useState } from 'react'
 import { useEffect } from 'react'
@@ -18,6 +19,7 @@ const navigation = [
   { name: 'Products', href: '/admin/products', icon: CubeIcon },
   { name: 'Orders', href: '/admin/orders', icon: ShoppingBagIcon },
   { name: 'Users', href: '/admin/users', icon: UsersIcon },
+  { name: 'Admins', href: '/admin/admins', icon: ShieldCheckIcon },
   { name: 'Content', href: '/admin/content', icon: DocumentTextIcon },
   { name: 'Lookbook', href: '/admin/lookbook', icon: DocumentTextIcon },
 ]
@@ -37,8 +39,8 @@ export default function AdminLayout({ children }) {
       return
     }
 
-    // If profile loaded but role isn't admin, kick them out.
-    if (admin && admin.role !== 'admin' && admin.role !== 'super_admin') {
+    // If profile loaded but role isn't admin or warehouse_user, kick them out.
+    if (admin && admin.role !== 'admin' && admin.role !== 'super_admin' && admin.role !== 'warehouse_user') {
       adminLogout()
       navigate('/admin/login')
     }
@@ -54,7 +56,7 @@ export default function AdminLayout({ children }) {
       {/* Admin Header - Full Width */}
       <div className="bg-black text-white">
         <div className="flex items-center justify-center h-16 px-4">
-          <h1 className="text-xl font-bold text-center">AUSTINE Admin</h1>
+          <h1 className="text-xl font-bold text-center">Austine Lifestyle LLP Admin</h1>
         </div>
       </div>
 
@@ -70,6 +72,13 @@ export default function AdminLayout({ children }) {
             {/* Navigation */}
             <nav className="flex-1 px-4 py-6 space-y-2">
               {navigation.map((item) => {
+                // Filter navigation for warehouse users - only show Products and Orders
+                if (admin?.role === 'warehouse_user' && 
+                    item.name !== 'Products' && 
+                    item.name !== 'Orders') {
+                  return null
+                }
+                
                 const isActive = location.pathname === item.href
                 return (
                   <Link

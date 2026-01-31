@@ -8,6 +8,16 @@ class ApiService {
 
   // Get authorization header
   getAuthHeader() {
+    // Check if current page is admin panel by looking at URL
+    const isAdminPath = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
+    
+    // Use admin token only if we're in admin panel AND admin session exists
+    if (isAdminPath && localStorage.getItem('adminSession:v1') === '1') {
+      const adminToken = localStorage.getItem('adminAuthToken');
+      return adminToken ? { Authorization: `Bearer ${adminToken}` } : {};
+    }
+    
+    // Otherwise use regular user token
     const token = localStorage.getItem('authToken');
     return token ? { Authorization: `Bearer ${token}` } : {};
   }
@@ -31,7 +41,13 @@ class ApiService {
       if (!response.ok) {
         // If unauthorized, clear stale token to avoid repeated failures
         if (response.status === 401) {
-          try { localStorage.removeItem('authToken'); } catch {}
+          const isAdminPath = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin');
+          if (isAdminPath) {
+            try { localStorage.removeItem('adminAuthToken'); } catch {}
+            try { localStorage.removeItem('adminSession:v1'); } catch {}
+          } else {
+            try { localStorage.removeItem('authToken'); } catch {}
+          }
         }
         throw new Error(data.message || `HTTP error! status: ${response.status}`);
       }
@@ -101,8 +117,6 @@ class ApiService {
 
   // Authentication methods
   async login(email, password) {
-    // Ensure a normal user login never carries an admin session flag
-    try { localStorage.removeItem('adminSession:v1') } catch {}
     const response = await this.post('/auth/login', { email, password });
     if (response.success && response.data.token) {
       localStorage.setItem('authToken', response.data.token);
@@ -113,7 +127,7 @@ class ApiService {
   async adminLogin(email, password) {
     const response = await this.post('/auth/admin/login', { email, password })
     if (response.success && response.data?.token) {
-      localStorage.setItem('authToken', response.data.token)
+      localStorage.setItem('adminAuthToken', response.data.token)
       localStorage.setItem('adminSession:v1', '1')
     }
     return response
@@ -140,13 +154,13 @@ class ApiService {
   }
 
   logout() {
-    try { localStorage.removeItem('adminSession:v1') } catch {}
+    // Only remove user auth token, not admin session
     localStorage.removeItem('authToken');
   }
 
   adminLogout() {
     try { localStorage.removeItem('adminSession:v1') } catch {}
-    localStorage.removeItem('authToken')
+    localStorage.removeItem('adminAuthToken')
   }
 
   // Admin user management
@@ -281,8 +295,12 @@ class ApiService {
   }
 
   // Admin dashboard
-  async getAdminStats() {
-    return this.get('/admin/stats');
+  async getAdminStats(startDate, endDate) {
+    const params = new URLSearchParams();
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    const queryString = params.toString();
+    return this.get(`/admin/stats${queryString ? '?' + queryString : ''}`);
   }
 
   // Upload methods
@@ -355,6 +373,10 @@ class ApiService {
 
   async getOrder(id) {
     return this.get(`/orders/${id}`);
+  }
+
+  async getOrderByOrderNumber(orderNumber) {
+    return this.get(`/orders/number/${orderNumber}`);
   }
 
   async updateOrderStatus(orderId, status, note = '') {

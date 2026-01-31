@@ -32,8 +32,8 @@ export default function FooterBanner() {
   return (
     <section className="mt-12 select-none">
       <div className="relative w-full bg-white">
-        {/* Top line (black) */}
-        <div className="h-[1px] w-full bg-black" />
+        {/* Top line */}
+        <div className="h-[0.5px] w-full bg-gray-400" />
         {/* Center row with text perfectly centered */}
         <div className="relative flex items-center justify-center h-12 sm:h-14">
           <div
@@ -42,8 +42,8 @@ export default function FooterBanner() {
             {messages[index]}
           </div>
         </div>
-    {/* Bottom line (black) */}
-    <div className="h-[1px] w-full bg-black" />
+    {/* Bottom line */}
+    <div className="h-[0.5px] w-full bg-gray-400" />
       </div>
     </section>
   )

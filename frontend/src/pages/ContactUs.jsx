@@ -13,7 +13,7 @@ export default function ContactUs() {
         <div className="mt-6 text-sm text-gray-700 leading-6">
           <div className="space-y-2">
             <p className="font-semibold text-gray-900">CONTACT DETAILS</p>
-            <p><span className="font-semibold text-gray-900">Brand:</span> AustineLifestyle</p>
+            <p><span className="font-semibold text-gray-900">Brand:</span> Austine Lifestyle LLP</p>
             <p>
               <span className="font-semibold text-gray-900">Email:</span>{' '}
               <a className="text-blue-600 hover:underline" href="mailto:info.austinelifestyle@gmail.com">

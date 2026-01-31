@@ -313,7 +313,19 @@ export default function SearchPage() {
               <div className="mt-2 flex items-center justify-between gap-2">
                 <div className="flex-1 pl-2">
                   <Link to={`/product/${pid}`} className="text-xs text-gray-900 font-medium line-clamp-2 hover:underline">{p.name}</Link>
-                  <div className="text-xs text-gray-700">{formatINR(p.price || 0)}</div>
+                  {(() => {
+                    const currentPrice = Number(p.price || 0)
+                    const originalPrice = Number(p.originalPrice || 0)
+                    const showOriginal = Number.isFinite(originalPrice) && originalPrice > currentPrice && p.showOriginalPrice !== false
+                    return (
+                      <div className="flex items-baseline gap-2">
+                        {showOriginal && (
+                          <span className="text-[11px] text-gray-500 line-through">{formatINR(originalPrice)}</span>
+                        )}
+                        <span className="text-xs text-gray-700">{formatINR(currentPrice)}</span>
+                      </div>
+                    )
+                  })()}
                 </div>
                 <div>
                   <button

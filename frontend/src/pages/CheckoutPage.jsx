@@ -23,6 +23,7 @@ export default function CheckoutPage() {
     city: '',
     postal: '',
     country: '',
+    paymentMethod: 'payu' // Default to PayU
   })
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
@@ -71,18 +72,78 @@ export default function CheckoutPage() {
       const payload = {
         items: orderItems,
         shippingAddress,
-        payment: { method: 'cod' }
+        payment: { method: form.paymentMethod }
       }
       const res = await apiService.post('/orders', payload)
       const order = res?.data?.order || res?.data
-      // Clear cart after successful order
-      clear()
-      // Navigate to confirmation with order data
-      navigate('/order-confirmation', { state: { order } })
+      
+      // If PayU payment selected, initiate PayU payment
+      if (form.paymentMethod === 'payu') {
+        await initiatePayUPayment(order)
+      } else {
+        // For COD, navigate to confirmation (cart will clear there)
+        const orderNumber = order.orderNumber || order._id
+        navigate(`/order-confirmation/${orderNumber}`, { state: { order } })
+      }
     } catch (err) {
       console.error('Order creation error:', err)
       alert('Failed to create order. Please try again.')
-    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function initiatePayUPayment(order) {
+    try {
+      const txnid = order.orderNumber || order._id
+      const amount = order.total.toFixed(2)
+      const productinfo = 'Order Payment'
+      const firstname = form.firstName
+      const email = form.email
+      
+      // Get hash from backend
+      const hashRes = await apiService.post('/orders/payment/hash', {
+        txnid,
+        amount,
+        productinfo,
+        firstname,
+        email
+      })
+      
+      if (!hashRes.success) throw new Error('Hash generation failed')
+      
+      // Create PayU form and submit
+      const payuForm = document.createElement('form')
+      payuForm.setAttribute('method', 'POST')
+      payuForm.setAttribute('action', hashRes.paymentUrl)
+      
+      const params = {
+        key: hashRes.key,
+        txnid,
+        amount,
+        productinfo,
+        firstname,
+        email,
+        phone: form.phone,
+        surl: `${window.location.origin}/api/orders/payment/success`,
+        furl: `${window.location.origin}/api/orders/payment/failure`,
+        hash: hashRes.hash
+      }
+      
+      Object.keys(params).forEach(key => {
+        const input = document.createElement('input')
+        input.setAttribute('type', 'hidden')
+        input.setAttribute('name', key)
+        input.setAttribute('value', params[key])
+        payuForm.appendChild(input)
+      })
+      
+      document.body.appendChild(payuForm)
+      
+      // Submit form to PayU (cart will clear on success)
+      payuForm.submit()
+    } catch (error) {
+      console.error('Payment initiation failed:', error)
+      alert('Payment initiation failed. Please try again.')
       setSubmitting(false)
     }
   }
@@ -153,6 +214,40 @@ export default function CheckoutPage() {
             </div>
           </section>
 
+          <section>
+            <h2 className="text-sm font-semibold text-gray-900 mb-4">Payment Method</h2>
+            <div className="space-y-3">
+              <label className="flex items-center gap-3 p-4 border border-gray-300 rounded-md cursor-pointer hover:border-gray-400">
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="payu"
+                  checked={form.paymentMethod === 'payu'}
+                  onChange={updateField}
+                  className="w-4 h-4 text-blue-600"
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-900">Pay Online (PayU)</p>
+                  <p className="text-xs text-gray-600">Credit Card, Debit Card, Net Banking, UPI</p>
+                </div>
+              </label>
+              <label className="flex items-center gap-3 p-4 border border-gray-300 rounded-md cursor-pointer hover:border-gray-400">
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="cod"
+                  checked={form.paymentMethod === 'cod'}
+                  onChange={updateField}
+                  className="w-4 h-4 text-blue-600"
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-900">Cash on Delivery</p>
+                  <p className="text-xs text-gray-600">Pay when you receive your order</p>
+                </div>
+              </label>
+            </div>
+          </section>
+
           <div>
             <button disabled={submitting} className="w-full sm:w-auto h-12 px-8 bg-black text-white text-sm font-semibold rounded-md disabled:opacity-50">
               {submitting ? 'Processing...' : 'Place order'}
@@ -179,7 +274,8 @@ export default function CheckoutPage() {
           </ul>
           <div className="space-y-2 text-xs">
             <div className="flex justify-between"><span className="text-gray-600">Subtotal</span><span>{formatINR(totals.subtotal)}</span></div>
-            <div className="flex justify-between"><span className="text-gray-600">Shipping</span><span className="text-gray-600">Calculated later</span></div>
+            <div className="flex justify-between"><span className="text-gray-600">Tax (5% incl.)</span><span className="text-gray-600">{formatINR(totals.subtotal * (5 / 105))}</span></div>
+            <div className="flex justify-between"><span className="text-gray-600">Shipping</span><span className="text-gray-600">Included in price</span></div>
           </div>
           <div className="flex justify-between border-t border-gray-200 pt-4 text-sm font-semibold text-gray-900">
             <span>Total</span>

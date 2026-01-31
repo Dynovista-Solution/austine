@@ -260,7 +260,19 @@ export default function SearchDropdown({ open, onClose, categories = [], initial
                             <img src={img} alt={p.name} className="w-full h-full object-cover" />
                           </div>
                           <div className="mt-2 text-xs text-gray-900 font-medium line-clamp-2">{p.name}</div>
-                          <div className="text-xs text-gray-700">{formatINR(p.price || 0)}</div>
+                          {(() => {
+                            const currentPrice = Number(p.price || 0)
+                            const originalPrice = Number(p.originalPrice || 0)
+                            const showOriginal = Number.isFinite(originalPrice) && originalPrice > currentPrice && p.showOriginalPrice !== false
+                            return (
+                              <div className="flex items-baseline gap-2">
+                                {showOriginal && (
+                                  <span className="text-[11px] text-gray-500 line-through">{formatINR(originalPrice)}</span>
+                                )}
+                                <span className="text-xs text-gray-700">{formatINR(currentPrice)}</span>
+                              </div>
+                            )
+                          })()}
                         </Link>
                       )
                     })}

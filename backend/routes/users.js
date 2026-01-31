@@ -7,7 +7,7 @@ const { authenticate, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
-const ALLOWED_ROLES = ['customer', 'premium_customer', 'admin', 'super_admin'];
+const ALLOWED_ROLES = ['customer', 'warehouse_user', 'admin', 'super_admin'];
 const PROFILE_FIELDS = ['firstName', 'lastName', 'address', 'city', 'postal', 'country', 'phone'];
 
 const handleValidation = (req, res) => {
@@ -102,7 +102,9 @@ router.get(
 		query('role').optional().isString(),
 		query('search').optional().isString(),
 		query('sort').optional().isString(),
-		query('order').optional().isIn(['asc', 'desc'])
+		query('order').optional().isIn(['asc', 'desc']),
+		query('startDate').optional().isISO8601(),
+		query('endDate').optional().isISO8601()
 	],
 	async (req, res) => {
 		const validationError = handleValidation(req, res);
@@ -116,7 +118,9 @@ router.get(
 				role,
 				search = '',
 				sort = 'createdAt',
-				order = 'desc'
+				order = 'desc',
+				startDate,
+				endDate
 			} = req.query;
 
 			const queryFilter = {};
@@ -129,6 +133,21 @@ router.get(
 			if (search) {
 				const regex = new RegExp(search.trim(), 'i');
 				queryFilter.$or = [{ name: regex }, { email: regex }];
+			}
+			
+			// Date filter for user registration
+			if (startDate || endDate) {
+				queryFilter.createdAt = {};
+				if (startDate) {
+					const start = new Date(startDate);
+					start.setHours(0, 0, 0, 0);
+					queryFilter.createdAt.$gte = start;
+				}
+				if (endDate) {
+					const end = new Date(endDate);
+					end.setHours(23, 59, 59, 999);
+					queryFilter.createdAt.$lte = end;
+				}
 			}
 
 			const allowedSorts = ['name', 'email', 'createdAt', 'lastLogin'];

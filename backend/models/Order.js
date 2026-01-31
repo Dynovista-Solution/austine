@@ -18,6 +18,7 @@ const orderSchema = new mongoose.Schema({
       required: true
     },
     name: String, // Snapshot of product name
+    sku: String, // Snapshot of product SKU
     image: String, // Snapshot of product image
     price: {
       type: Number,
@@ -76,7 +77,7 @@ const orderSchema = new mongoose.Schema({
   payment: {
     method: {
       type: String,
-      enum: ['stripe', 'paypal', 'bank_transfer', 'cod'],
+      enum: ['stripe', 'paypal', 'bank_transfer', 'cod', 'payu'],
       required: true
     },
     status: {

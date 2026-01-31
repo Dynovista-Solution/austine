@@ -25,9 +25,11 @@ export default function AdminProductForm({ mode = 'create' }) {
     subcategory: '',
     price: '', // discounted/current price
     originalPrice: '', // original (before discount)
+    showOriginalPrice: true,
     sizes: [], // Simple array of sizes like ['S', 'M', 'L']
     colors: [], // Simple array of colors like ['Red', 'Blue', 'Black']
     colorImages: {}, // { "Red": [{url}], "Blue": [{url}] }
+    sizeChartImage: '', // URL to size chart image
     inventory: [], // Array of { color, size, quantity }
   })
   const [saving, setSaving] = useState(false)
@@ -80,9 +82,11 @@ export default function AdminProductForm({ mode = 'create' }) {
         subcategory: existing.subcategory || '',
         price: existing.price || '',
         originalPrice: existing.originalPrice || '',
+        showOriginalPrice: existing.showOriginalPrice !== false,
         sizes: Array.isArray(existing.sizes) ? existing.sizes : [],
         colors: Array.isArray(existing.colors) ? existing.colors : [],
         colorImages: existing.colorImages || {},
+        sizeChartImage: existing.sizeChartImage || '',
         inventory: Array.isArray(existing.inventory) ? existing.inventory : [],
       }))
     }
@@ -204,9 +208,11 @@ export default function AdminProductForm({ mode = 'create' }) {
         subcategory: form.subcategory.trim(),
         price: effectivePrice,
         originalPrice: effectiveOriginal,
+        showOriginalPrice: effectiveOriginal !== undefined ? Boolean(form.showOriginalPrice) : false,
         sizes: Array.isArray(form.sizes) ? form.sizes : [],
         colors: Array.isArray(form.colors) ? form.colors : [],
         colorImages: form.colorImages || {},
+        sizeChartImage: form.sizeChartImage || '',
         inventory: Array.isArray(form.inventory) ? form.inventory : [],
       }
 
@@ -321,6 +327,20 @@ export default function AdminProductForm({ mode = 'create' }) {
               <label className="block text-sm font-medium text-gray-700 mb-1">Discounted price *</label>
               <input type="number" min="0" step="0.01" value={form.price} onChange={(e) => onChange('price', e.target.value)} className="w-full border rounded px-3 py-2 text-sm" placeholder="e.g. 89.99" />
             </div>
+          </div>
+
+          <div className="mt-4 flex items-center gap-2">
+            <input
+              id="show-original-price"
+              type="checkbox"
+              checked={Boolean(form.showOriginalPrice)}
+              disabled={!form.originalPrice}
+              onChange={(e) => onChange('showOriginalPrice', e.target.checked)}
+              className="h-4 w-4"
+            />
+            <label htmlFor="show-original-price" className={`text-sm ${!form.originalPrice ? 'text-gray-400' : 'text-gray-700'}`}>
+              Show original price on website (strike-through)
+            </label>
           </div>
         </section>
 
@@ -473,6 +493,70 @@ export default function AdminProductForm({ mode = 'create' }) {
             </div>
           </section>
         )}
+
+        {/* Size Chart Image */}
+        <section className="bg-white rounded border border-gray-200 p-4 sm:p-6">
+          <h2 className="text-sm font-semibold text-gray-900 mb-4">Size Chart</h2>
+          <p className="text-xs text-gray-600 mb-4">Upload a size chart image that will be displayed when customers click the "Size Chart" button on the product page</p>
+          
+          {form.sizeChartImage ? (
+            <div className="space-y-3">
+              <div className="relative inline-block border border-gray-200 rounded overflow-hidden">
+                <img src={form.sizeChartImage} alt="Size Chart" className="max-w-full h-auto max-h-64 object-contain" />
+                <button
+                  type="button"
+                  onClick={() => onChange('sizeChartImage', '')}
+                  className="absolute top-2 right-2 bg-red-600 text-white rounded p-1.5 hover:bg-red-700"
+                >
+                  <TrashIcon className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                id="size-chart-upload"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (file) {
+                    try {
+                      console.log('Starting upload for:', file.name, file.type, file.size)
+                      const result = await apiService.uploadImages([file])
+                      console.log('Full upload result:', result)
+                      
+                      const url = result?.data?.files?.[0]?.url || result?.data?.files?.[0]
+                      console.log('Extracted URL:', url)
+                      
+                      if (url) {
+                        onChange('sizeChartImage', url)
+                        alert('Size chart uploaded successfully!')
+                      } else {
+                        console.error('No URL found. Result structure:', JSON.stringify(result, null, 2))
+                        alert('Upload failed: No URL returned from server')
+                      }
+                    } catch (e) {
+                      console.error('Size chart upload failed - Full error:', e)
+                      console.error('Error message:', e?.message)
+                      console.error('Error stack:', e?.stack)
+                      alert('Size chart upload failed: ' + (e?.message || 'Unknown error - check console'))
+                    }
+                  }
+                  e.target.value = ''
+                }}
+              />
+              <label
+                htmlFor="size-chart-upload"
+                className="inline-flex items-center justify-center px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:border-gray-400 hover:bg-gray-50 cursor-pointer"
+              >
+                <PhotoIcon className="w-5 h-5 mr-2" />
+                Upload Size Chart
+              </label>
+            </div>
+          )}
+        </section>
 
         {/* Color Images */}
         {form.colors.length > 0 && (

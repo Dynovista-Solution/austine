@@ -15,7 +15,7 @@ export function ContentProvider({ children }) {
         enabled: true
       },
       hero: {
-        title: 'Welcome to AUSTINE',
+        title: 'Welcome to Austine Lifestyle LLP',
         subtitle: 'Discover luxury fashion & lifestyle',
         imageUrl: '/hero-image.jpg',
         primaryButton: {
@@ -91,7 +91,7 @@ export function ContentProvider({ children }) {
       ]
     },
     branding: {
-      siteName: 'AUSTINE',
+      siteName: 'Austine Lifestyle LLP',
       siteDescription: 'Luxury Fashion & Lifestyle',
       logoUrl: '/logo.jpg',
       faviconUrl: '/favicon.ico'

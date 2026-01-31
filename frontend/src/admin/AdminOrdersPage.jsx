@@ -314,7 +314,7 @@ export default function AdminOrdersPage() {
             inputMode="decimal"
             min="0"
             step="0.01"
-            placeholder="Min €"
+            placeholder="Min ₹"
             value={minTotal}
             onChange={(e) => setMinTotal(e.target.value)}
             className="block w-full rounded-md border-0 bg-white py-1.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-500 sm:text-sm sm:leading-6"
@@ -328,7 +328,7 @@ export default function AdminOrdersPage() {
             inputMode="decimal"
             min="0"
             step="0.01"
-            placeholder="Max €"
+            placeholder="Max ₹"
             value={maxTotal}
             onChange={(e) => setMaxTotal(e.target.value)}
             className="block w-full rounded-md border-0 bg-white py-1.5 px-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-500 sm:text-sm sm:leading-6"
@@ -417,7 +417,7 @@ export default function AdminOrdersPage() {
                             </span>
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            €{order.total.toFixed(2)}
+                            ₹{order.total.toFixed(2)}
                           </td>
                           <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                             <button

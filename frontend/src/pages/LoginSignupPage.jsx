@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useUser } from '../context/UserContext.jsx'
 import { UserIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
@@ -14,8 +14,15 @@ export default function LoginSignupPage() {
     confirmPassword: ''
   })
   const [errors, setErrors] = useState({})
-  const { login, signup, loading } = useUser()
+  const { login, signup, loading, isLoggedIn } = useUser()
   const navigate = useNavigate()
+
+  // Redirect to profile if already logged in (use effect to avoid navigation during render)
+  useEffect(() => {
+    if (isLoggedIn && !loading) {
+      navigate('/profile')
+    }
+  }, [isLoggedIn, loading, navigate])
 
   const handleInputChange = (e) => {
     const { name, value } = e.target
@@ -93,7 +100,7 @@ export default function LoginSignupPage() {
             {isLogin ? 'Welcome Back' : 'Create Account'}
           </h1>
           <p className="text-gray-600 mt-2">
-            {isLogin ? 'Sign in to your account' : 'Join AUSTINE today'}
+            {isLogin ? 'Sign in to your account' : 'Join Austine Lifestyle LLP today'}
           </p>
         </div>
 

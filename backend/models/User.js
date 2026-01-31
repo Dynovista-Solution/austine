@@ -5,7 +5,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true, index: true },
   password: { type: String, required: true },
   name: { type: String, required: true },
-  role: { type: String, enum: ['customer', 'premium_customer', 'admin', 'super_admin'], default: 'customer', index: true },
+  role: { type: String, enum: ['customer', 'warehouse_user', 'admin', 'super_admin'], default: 'customer', index: true },
   isActive: { type: Boolean, default: true },
   profile: { type: Object, default: {} },
   wishlist: { type: Array, default: [] },

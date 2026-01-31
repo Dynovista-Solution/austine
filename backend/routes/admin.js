@@ -12,8 +12,17 @@ const router = express.Router();
 router.get('/stats', [authenticate, requireAdmin], async (req, res) => {
   try {
     const now = new Date();
+    
+    // Get date range from query params or use defaults
+    const startDate = req.query.startDate ? new Date(req.query.startDate) : new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+    const endDate = req.query.endDate ? new Date(req.query.endDate) : now;
+    endDate.setHours(23, 59, 59, 999); // End of day
+    
     const last30Days = new Date(now);
     last30Days.setDate(now.getDate() - 30);
+    
+    const last7Days = new Date(now);
+    last7Days.setDate(now.getDate() - 7);
 
     const [
       productsTotal,
@@ -22,34 +31,105 @@ router.get('/stats', [authenticate, requireAdmin], async (req, res) => {
       ordersTotal,
       ordersByStatus,
       revenueAgg,
-      recentOrders
+      recentOrders,
+      customerStats,
+      newCustomersLast30Days,
+      dailyCustomerStats
     ] = await Promise.all([
       Product.countDocuments({}),
       Product.countDocuments({ isActive: { $ne: false } }),
       User.countDocuments({ isActive: { $ne: false } }),
-      Order.countDocuments({}),
+      // Filter orders by date range
+      Order.countDocuments({ 
+        createdAt: { $gte: startDate, $lte: endDate }
+      }),
+      // Filter order status by date range
       Order.aggregate([
+        { 
+          $match: { 
+            createdAt: { $gte: startDate, $lte: endDate }
+          }
+        },
         { $group: { _id: '$status', count: { $sum: 1 } } }
       ]),
+      // Filter revenue by date range
       Order.aggregate([
         {
           $facet: {
-            paidAllTime: [
-              { $match: { 'payment.status': 'paid' } },
+            paidInRange: [
+              { 
+                $match: { 
+                  'payment.status': 'paid',
+                  createdAt: { $gte: startDate, $lte: endDate }
+                }
+              },
               { $group: { _id: null, total: { $sum: '$total' } } }
             ],
-            paidLast30Days: [
-              { $match: { 'payment.status': 'paid', createdAt: { $gte: last30Days } } },
+            paidAllTime: [
+              { $match: { 'payment.status': 'paid' } },
               { $group: { _id: null, total: { $sum: '$total' } } }
             ]
           }
         }
       ]),
-      Order.find({})
+      // Filter recent orders by date range
+      Order.find({
+        createdAt: { $gte: startDate, $lte: endDate }
+      })
         .sort({ createdAt: -1 })
         .limit(8)
         .select('orderNumber total status payment.status createdAt shippingAddress.firstName shippingAddress.lastName shippingAddress.email')
-        .lean()
+        .lean(),
+      // Customer statistics: new vs repeat (filtered by date range)
+      Order.aggregate([
+        {
+          $match: {
+            createdAt: { $gte: startDate, $lte: endDate }
+          }
+        },
+        {
+          $group: {
+            _id: '$user',
+            orderCount: { $sum: 1 },
+            firstOrder: { $min: '$createdAt' }
+          }
+        },
+        {
+          $facet: {
+            newCustomers: [
+              { $match: { orderCount: 1 } },
+              { $count: 'count' }
+            ],
+            repeatCustomers: [
+              { $match: { orderCount: { $gt: 1 } } },
+              { $count: 'count' }
+            ]
+          }
+        }
+      ]),
+      // New customers in selected date range
+      User.countDocuments({ 
+        role: 'customer',
+        createdAt: { $gte: startDate, $lte: endDate }
+      }),
+      // Daily customer registration for selected date range
+      User.aggregate([
+        {
+          $match: {
+            role: 'customer',
+            createdAt: { $gte: startDate, $lte: endDate }
+          }
+        },
+        {
+          $group: {
+            _id: { 
+              $dateToString: { format: '%Y-%m-%d', date: '$createdAt' }
+            },
+            count: { $sum: 1 }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ])
     ]);
 
     const byStatus = Array.isArray(ordersByStatus)
@@ -59,8 +139,11 @@ router.get('/stats', [authenticate, requireAdmin], async (req, res) => {
         }, {})
       : {};
 
+    const paidInRange = revenueAgg?.[0]?.paidInRange?.[0]?.total || 0;
     const paidAllTime = revenueAgg?.[0]?.paidAllTime?.[0]?.total || 0;
-    const paidLast30Days = revenueAgg?.[0]?.paidLast30Days?.[0]?.total || 0;
+    
+    const newCustomers = customerStats?.[0]?.newCustomers?.[0]?.count || 0;
+    const repeatCustomers = customerStats?.[0]?.repeatCustomers?.[0]?.count || 0;
 
     return res.json({
       success: true,
@@ -78,8 +161,14 @@ router.get('/stats', [authenticate, requireAdmin], async (req, res) => {
           byStatus
         },
         revenue: {
-          paidAllTime,
-          paidLast30Days
+          paidInRange,
+          paidAllTime
+        },
+        customers: {
+          new: newCustomers,
+          repeat: repeatCustomers,
+          newLast30Days: newCustomersLast30Days,
+          dailyRegistrations: dailyCustomerStats
         },
         recentOrders: recentOrders.map(o => ({
           _id: o._id,

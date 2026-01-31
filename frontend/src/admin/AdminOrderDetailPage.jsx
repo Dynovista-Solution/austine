@@ -85,6 +85,7 @@ export default function AdminOrderDetailPage() {
       setUpdatingStatus(true)
       await apiService.updateOrderStatus(orderRecordId, newStatus)
       await fetchOrder()
+      setNextStatus(newStatus)
       alert(`Order status updated to ${newStatus}`)
     } catch (error) {
       console.error('Failed to update order status:', error)
@@ -157,7 +158,7 @@ export default function AdminOrderDetailPage() {
             {getStatusIcon(order.status)}
             <span className="ml-1 capitalize">{order.status}</span>
           </span>
-          <p className="mt-2 text-sm font-semibold text-gray-900">€{Number(order.total || 0).toFixed(2)}</p>
+          <p className="mt-2 text-sm font-semibold text-gray-900">₹{Number(order.total || 0).toFixed(2)}</p>
           <p className="text-xs text-gray-500">{orderDate ? new Date(orderDate).toLocaleString() : ''}</p>
         </div>
       </div>
@@ -177,10 +178,10 @@ export default function AdminOrderDetailPage() {
           <div className="space-y-2 text-sm">
             <p><span className="font-medium">Order ID:</span> {orderDisplayId}</p>
             <p><span className="font-medium">Date:</span> {orderDate ? new Date(orderDate).toLocaleDateString() : 'N/A'}</p>
-            <p><span className="font-medium">Subtotal:</span> €{Number(order.subtotal || 0).toFixed(2)}</p>
-            <p><span className="font-medium">Shipping:</span> €{Number(order.shipping || 0).toFixed(2)}</p>
-            <p><span className="font-medium">Tax:</span> €{Number(order.tax || 0).toFixed(2)}</p>
-            <p><span className="font-medium">Total:</span> €{Number(order.total || 0).toFixed(2)}</p>
+            <p><span className="font-medium">Subtotal:</span> ₹{Number(order.subtotal || 0).toFixed(2)}</p>
+            <p><span className="font-medium">Tax (5% incl.):</span> ₹{Number(order.tax || 0).toFixed(2)}</p>
+            <p><span className="font-medium">Shipping:</span> Included in price</p>
+            <p className="font-semibold text-base pt-2 border-t"><span className="font-semibold">Total:</span> ₹{Number(order.total || 0).toFixed(2)}</p>
           </div>
         </div>
 
@@ -196,14 +197,6 @@ export default function AdminOrderDetailPage() {
           <h2 className="font-semibold text-gray-900 mb-3">Payment Information</h2>
           <div className="space-y-2 text-sm">
             <p><span className="font-medium">Method:</span> {order.payment?.method || 'N/A'}</p>
-            <p>
-              <span className="font-medium">Status:</span>
-              <span className={`ml-2 px-2 py-1 rounded text-xs font-medium ${
-                order.payment?.status === 'paid' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-              }`}>
-                {order.payment?.status || 'N/A'}
-              </span>
-            </p>
           </div>
         </div>
       </div>
@@ -215,36 +208,21 @@ export default function AdminOrderDetailPage() {
             <p className="text-sm text-gray-500">No items found.</p>
           ) : (
             items.map((item, idx) => {
-              let itemImage = '/placeholder.jpg'
-
-              if (item.colorImages && typeof item.colorImages === 'object') {
-                const colors = Object.keys(item.colorImages)
-                for (const color of colors) {
-                  const colorMedia = item.colorImages[color]
-                  if (Array.isArray(colorMedia) && colorMedia.length > 0) {
-                    const firstImage = colorMedia.find(m => !m.type || m.type === 'image')
-                    if (firstImage) {
-                      itemImage = firstImage.url
-                      break
-                    }
-                  }
-                }
-              }
-
-              if (itemImage === '/placeholder.jpg') {
-                itemImage = item.image || item.images?.[0]?.url || '/placeholder.jpg'
-              }
+              const itemImage = item.image || '/placeholder.jpg'
 
               return (
                 <div key={item._id || item.id || idx} className="flex items-center gap-4 bg-gray-50 rounded-lg p-3">
-                  <img src={itemImage} alt={item.name} className="w-12 h-12 rounded object-cover" />
+                  <img src={itemImage} alt={item.name || 'Product'} className="w-16 h-16 rounded object-cover" />
                   <div className="flex-1">
-                    <p className="font-medium text-gray-900">{item.name}</p>
-                    <p className="text-sm text-gray-600">Quantity: {item.quantity}</p>
-                    {item.size && <p className="text-xs text-gray-500">Size: {item.size}</p>}
-                    {item.color && <p className="text-xs text-gray-500">Color: {item.color}</p>}
+                    <p className="font-medium text-gray-900">{item.name || 'N/A'}</p>
+                    {item.sku && <p className="text-xs text-gray-500 mt-0.5">SKU: {item.sku}</p>}
+                    <div className="flex flex-wrap gap-3 mt-1 text-sm text-gray-600">
+                      <span>Qty: {item.quantity || 0}</span>
+                      {item.size && <span>Size: {item.size}</span>}
+                      {item.color && <span>Color: {item.color}</span>}
+                    </div>
                   </div>
-                  <p className="font-medium text-gray-900">€{Number(item.price || 0).toFixed(2)}</p>
+                  <p className="font-medium text-gray-900">₹{Number(item.price || 0).toFixed(2)}</p>
                 </div>
               )
             })

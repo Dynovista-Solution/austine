@@ -47,8 +47,13 @@ export default function AdminLoginPage() {
 
     setIsLoading(true)
     try {
-      await adminLogin(formData.email, formData.password)
-      navigate('/admin')
+      const user = await adminLogin(formData.email, formData.password)
+      // Redirect warehouse users to products page, admins to dashboard
+      if (user?.role === 'warehouse_user') {
+        navigate('/admin/products')
+      } else {
+        navigate('/admin')
+      }
     } catch (error) {
       setErrors({ general: error.message || 'Login failed. Please try again.' })
     } finally {

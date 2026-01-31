@@ -15,7 +15,7 @@ export default function TermsAndConditions() {
             <li>Product availability subject to change.</li>
             <li>Prices and descriptions may be updated.</li>
             <li>Slight color variation may occur.</li>
-            <li>All content is intellectual property of AustineLifestyle.</li>
+            <li>All content is intellectual property of Austine Lifestyle LLP.</li>
             <li>Governed by Indian law.</li>
           </ul>
         </div>

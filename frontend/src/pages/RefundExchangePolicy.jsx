@@ -11,7 +11,7 @@ export default function RefundExchangePolicy() {
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Refund &amp; Exchange Policy</h1>
 
         <div className="mt-6 text-sm text-gray-700 leading-6">
-          <p className="font-semibold text-gray-900">REFUND &amp; EXCHANGE POLICY</p>
+         
 
           <div className="mt-4 space-y-5">
             <div>

@@ -468,7 +468,7 @@ export default function AdminProductsPage() {
                         {product.sku || 'N/A'}
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        €{product.price}
+                        ₹{product.price}
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                         {product.category || 'N/A'}

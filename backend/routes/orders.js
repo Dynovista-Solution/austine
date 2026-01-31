@@ -1,9 +1,11 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const { body, query, validationResult } = require('express-validator');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const { authenticate, requireAdmin } = require('../middleware/auth');
+const payuConfig = require('../config/payu');
 
 const router = express.Router();
 
@@ -24,7 +26,7 @@ router.post('/', [
   body('shippingAddress.state').optional().isString(),
   body('shippingAddress.zipCode').notEmpty(),
   body('shippingAddress.country').notEmpty(),
-  body('payment.method').isIn(['cod','stripe','paypal','bank_transfer']).withMessage('Invalid payment method')
+  body('payment.method').isIn(['cod','stripe','paypal','bank_transfer','payu']).withMessage('Invalid payment method')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -47,10 +49,56 @@ router.post('/', [
       }
       const price = Number(product.price);
       const quantity = Number(item.quantity);
-      const image = product.images?.[0]?.url || product.image || '';
+      
+      // Get product image - check colorImages first, then fallback to images array
+      let image = '';
+      const selectedColor = item.color || item.variantLabel || '';
+      
+      // Handle colorImages as Mongoose Map or plain object
+      if (product.colorImages) {
+        // Try to get color-specific image first
+        if (selectedColor) {
+          const colorMedia = typeof product.colorImages.get === 'function' 
+            ? product.colorImages.get(selectedColor) 
+            : product.colorImages[selectedColor];
+          
+          if (Array.isArray(colorMedia) && colorMedia.length > 0) {
+            const firstImage = colorMedia.find(m => !m.type || m.type === 'image');
+            if (firstImage?.url) image = firstImage.url;
+          }
+        }
+        
+        // If no color-specific image, get any available image
+        if (!image) {
+          const colorKeys = typeof product.colorImages.keys === 'function'
+            ? Array.from(product.colorImages.keys())
+            : Object.keys(product.colorImages);
+          
+          for (const color of colorKeys) {
+            const colorMedia = typeof product.colorImages.get === 'function'
+              ? product.colorImages.get(color)
+              : product.colorImages[color];
+            
+            if (Array.isArray(colorMedia) && colorMedia.length > 0) {
+              const firstImage = colorMedia.find(m => !m.type || m.type === 'image');
+              if (firstImage?.url) {
+                image = firstImage.url;
+                break;
+              }
+            }
+          }
+        }
+      }
+      
+      // Fallback to old images array structure
+      if (!image) {
+        image = product.images?.[0]?.url || product.image || '';
+      }
+      
       const snapshot = {
         product: product.id || product._id,
         name: product.name,
+        sku: product.sku || '',
         image,
         price,
         quantity,
@@ -62,9 +110,13 @@ router.post('/', [
       enrichedItems.push(snapshot);
     }
 
-    const tax = 0;
+    // Tax is already included in product price (5% of final price)
+    // Extract tax: if price includes 5% tax, then tax = subtotal * (5/105)
+    const tax = Number((subtotal * (5 / 105)).toFixed(2));
+    // Shipping is included in product price
     const shipping = 0;
-    const total = Number((subtotal + tax + shipping).toFixed(2));
+    // Total equals subtotal since tax is already included
+    const total = Number(subtotal.toFixed(2));
 
     const orderData = {
       user: req.user.id || req.user._id,
@@ -108,6 +160,20 @@ router.get('/my', authenticate, async (req, res) => {
   } catch (error) {
     console.error('Get my orders error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch orders' });
+  }
+});
+
+// @route   GET /api/orders/number/:orderNumber
+// @desc    Get order by order number (for payment confirmation)
+// @access  Public (payment confirmation)
+router.get('/number/:orderNumber', async (req, res) => {
+  try {
+    const order = await Order.findOne({ orderNumber: req.params.orderNumber });
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    res.json(order);
+  } catch (error) {
+    console.error('Get order by number error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch order' });
   }
 });
 
@@ -272,8 +338,15 @@ router.put('/:id/status', [
     order.status = status;
 
     // Keep payment status loosely in sync for common admin actions
-    if (status === 'refunded') {
-      order.payment = order.payment || { method: 'cod', status: 'pending' };
+    order.payment = order.payment || { method: 'cod', status: 'pending' };
+    
+    if (status === 'delivered') {
+      // Mark payment as paid when order is delivered
+      order.payment.status = 'paid';
+      if (!order.payment.paidAt) {
+        order.payment.paidAt = new Date();
+      }
+    } else if (status === 'refunded') {
       order.payment.status = 'refunded';
     }
 
@@ -288,6 +361,80 @@ router.put('/:id/status', [
   } catch (error) {
     console.error('Update order status error:', error);
     res.status(500).json({ success: false, message: 'Failed to update order status' });
+  }
+});
+
+// @route   POST /api/orders/payment/hash
+// @desc    Generate PayU payment hash
+// @access  Private
+router.post('/payment/hash', authenticate, async (req, res) => {
+  try {
+    const { txnid, amount, productinfo, firstname, email } = req.body;
+    
+    if (!txnid || !amount || !productinfo || !firstname || !email) {
+      return res.status(400).json({ success: false, message: 'Missing required parameters' });
+    }
+    
+    const hashString = `${payuConfig.merchantKey}|${txnid}|${amount}|${productinfo}|${firstname}|${email}|||||||||||${payuConfig.merchantSalt}`;
+    const hash = crypto.createHash('sha512').update(hashString).digest('hex');
+    
+    res.json({ 
+      success: true, 
+      hash,
+      key: payuConfig.merchantKey,
+      paymentUrl: payuConfig.paymentUrl
+    });
+  } catch (error) {
+    console.error('Hash generation error:', error);
+    res.status(500).json({ success: false, message: 'Hash generation failed' });
+  }
+});
+
+// @route   POST /api/orders/payment/success
+// @desc    PayU Success Callback
+// @access  Public
+router.post('/payment/success', async (req, res) => {
+  try {
+    const { txnid, status, amount, productinfo, firstname, email, mihpayid, hash } = req.body;
+    
+    // Verify hash for security
+    const verifyHashString = `${payuConfig.merchantSalt}|${status}|||||||||||${email}|${firstname}|${productinfo}|${amount}|${txnid}|${payuConfig.merchantKey}`;
+    const verifyHash = crypto.createHash('sha512').update(verifyHashString).digest('hex');
+    
+    if (hash === verifyHash && status === 'success') {
+      // Update order payment status
+      const order = await Order.findOne({ orderNumber: txnid });
+      if (order) {
+        order.payment.status = 'paid';
+        order.payment.transactionId = mihpayid;
+        order.payment.paidAt = new Date();
+        await order.save();
+      }
+      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/order-confirmation/${txnid}?success=true`);
+    } else {
+      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed?txnid=${txnid}`);
+    }
+  } catch (error) {
+    console.error('Payment success callback error:', error);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed`);
+  }
+});
+
+// @route   POST /api/orders/payment/failure
+// @desc    PayU Failure Callback
+// @access  Public
+router.post('/payment/failure', async (req, res) => {
+  try {
+    const { txnid } = req.body;
+    const order = await Order.findOne({ orderNumber: txnid });
+    if (order) {
+      order.payment.status = 'failed';
+      await order.save();
+    }
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed?txnid=${txnid}`);
+  } catch (error) {
+    console.error('Payment failure callback error:', error);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed`);
   }
 });
 

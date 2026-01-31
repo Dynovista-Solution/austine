@@ -72,7 +72,9 @@ export default function WishlistPage() {
               productImage = p.image || p.images?.[0]?.url || '/placeholder.jpg'
             }
 
-            const productPrice = Number(p.price || 0).toFixed(2)
+            const currentPrice = Number(p.price || 0)
+            const originalPrice = Number(p.originalPrice || 0)
+            const showOriginal = Number.isFinite(originalPrice) && originalPrice > currentPrice && p.showOriginalPrice !== false
             
             return (
               <li key={productId} className="group">
@@ -82,7 +84,12 @@ export default function WishlistPage() {
                 <div className="mt-2 flex items-start justify-between gap-2">
                   <div>
                     <Link to={`/product/${productId}`} className="text-xs font-medium text-gray-900 line-clamp-2 leading-snug hover:underline">{p.name}</Link>
-                    <div className="mt-1 text-xs text-gray-700">{formatINR(productPrice)}</div>
+                    <div className="mt-1 flex items-baseline gap-2">
+                      {showOriginal && (
+                        <span className="text-[11px] text-gray-500 line-through">{formatINR(originalPrice)}</span>
+                      )}
+                      <span className="text-xs text-gray-700">{formatINR(currentPrice)}</span>
+                    </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">
                     <button

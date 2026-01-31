@@ -7,6 +7,7 @@ const productSchema = new mongoose.Schema({
   shortDescription: { type: String },
   price: { type: Number, required: true, min: 0 },
   originalPrice: { type: Number, min: 0 },
+  showOriginalPrice: { type: Boolean, default: true },
   discount: { type: Number, default: 0, min: 0, max: 100 },
   category: { type: String, required: true },
   subcategory: { type: String },
@@ -16,6 +17,7 @@ const productSchema = new mongoose.Schema({
   sizes: { type: Array, default: [] },
   colors: { type: Array, default: [] },
   colorImages: { type: Map, of: Array, default: {} }, // { "Red": [{url, type}], "Blue": [...] }
+  sizeChartImage: { type: String }, // URL to size chart image
   inventory: [{
     color: { type: String, required: true },
     size: { type: String, required: true },

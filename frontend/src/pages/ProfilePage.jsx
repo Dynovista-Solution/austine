@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useUser } from '../context/UserContext.jsx'
 import { useWishlist } from '../context/WishlistContext.jsx'
 import { useCart } from '../context/CartContext.jsx'
@@ -7,19 +7,36 @@ import { Link, useNavigate } from 'react-router-dom'
 import { formatINR } from '../utils/formatCurrency.js'
 
 export default function ProfilePage() {
-  const { user, isLoggedIn, update, logout } = useUser()
+  const { user, isLoggedIn, update, logout, loading } = useUser()
   const navigate = useNavigate()
-
-  // Redirect to login if not logged in
-  if (!isLoggedIn) {
-    navigate('/login')
-    return null
-  }
-
   const { ids: wishlistIds } = useWishlist()
   const { items: cartItems } = useCart()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(user)
+
+  // Redirect to login if not logged in (use effect to avoid navigation during render)
+  useEffect(() => {
+    if (!loading && !isLoggedIn) {
+      navigate('/login')
+    }
+  }, [loading, isLoggedIn, navigate])
+
+  // Wait for initial load
+  if (loading) {
+    return (
+      <div className="w-full min-h-[60vh] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Don't render if not logged in or user data not loaded (navigation will happen in effect)
+  if (!isLoggedIn || !user) {
+    return null
+  }
 
   function startEdit() {
     setDraft(user)

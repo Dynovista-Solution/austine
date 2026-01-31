@@ -1,15 +1,17 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 import apiService from '../services/api'
 // Removed hardcoded initialProducts; products now always come from API
 
 const AdminContext = createContext(null)
 
-let hasInitializedAdmin = false
-
 export function AdminProvider({ children }) {
+  const location = useLocation()
+  const isAdminRoute = location.pathname.startsWith('/admin')
+
   const [admin, setAdmin] = useState(null)
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(() => {
-    return localStorage.getItem('adminSession:v1') === '1' && localStorage.getItem('authToken') !== null
+    return localStorage.getItem('adminSession:v1') === '1' && localStorage.getItem('adminAuthToken') !== null
   })
   const [products, setProducts] = useState([])
   const [productsPagination, setProductsPagination] = useState({ page: 1, pages: 1, total: 0, limit: 20 })
@@ -24,7 +26,7 @@ export function AdminProvider({ children }) {
           enabled: true
         },
         hero: {
-          title: 'Welcome to AUSTINE',
+          title: 'Welcome to Austine Lifestyle LLP',
           subtitle: 'Discover luxury fashion & lifestyle',
           imageUrl: '/hero-image.jpg',
           primaryButton: {
@@ -100,7 +102,7 @@ export function AdminProvider({ children }) {
         ]
       },
       branding: {
-        siteName: 'AUSTINE',
+        siteName: 'Austine Lifestyle LLP',
         siteDescription: 'Luxury Fashion & Lifestyle',
         logoUrl: '/logo.jpg',
         faviconUrl: '/favicon.ico'
@@ -118,19 +120,7 @@ export function AdminProvider({ children }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const loadingRef = useRef(false)
-
-  useEffect(() => {
-    if (hasInitializedAdmin) return
-    hasInitializedAdmin = true
-    
-    if (isAdminLoggedIn) {
-      // Load admin profile and data when logged in
-      loadAdminData()
-    } else {
-      setAdmin(null)
-      setProducts([])
-    }
-  }, [isAdminLoggedIn])
+  const hasLoadedAdminDataRef = useRef(false)
 
   // Save content to localStorage whenever content changes
   useEffect(() => {
@@ -140,7 +130,7 @@ export function AdminProvider({ children }) {
   }, [content])
 
   // Load admin data from API
-  const loadAdminData = async () => {
+  async function loadAdminData() {
     try {
       setLoading(true)
       setError(null)
@@ -150,7 +140,7 @@ export function AdminProvider({ children }) {
       if (profileResponse.success) {
         // API returns { success, data: { user } }
         const user = profileResponse.data?.user || profileResponse.data
-        if (user?.role !== 'admin' && user?.role !== 'super_admin') {
+        if (user?.role !== 'admin' && user?.role !== 'super_admin' && user?.role !== 'warehouse_user') {
           throw new Error('Admin access required.')
         }
         setAdmin(user)
@@ -218,6 +208,24 @@ export function AdminProvider({ children }) {
     }
   }
 
+  // Only load admin data when we're on an /admin route.
+  // This prevents website refreshes from triggering admin calls with the user token
+  // and then logging the admin out.
+  useEffect(() => {
+    if (!isAdminLoggedIn) {
+      hasLoadedAdminDataRef.current = false
+      setAdmin(null)
+      setProducts([])
+      return
+    }
+
+    if (!isAdminRoute) return
+    if (hasLoadedAdminDataRef.current) return
+
+    hasLoadedAdminDataRef.current = true
+    loadAdminData()
+  }, [isAdminLoggedIn, isAdminRoute])
+
   async function adminLogin(email, password) {
     try {
       setLoading(true)
@@ -229,6 +237,7 @@ export function AdminProvider({ children }) {
         setAdmin(response.data.user)
         setIsAdminLoggedIn(true)
         // Load admin data after successful login
+        hasLoadedAdminDataRef.current = true
         await loadAdminData()
         return response.data.user
       } else {
@@ -247,6 +256,7 @@ export function AdminProvider({ children }) {
     setIsAdminLoggedIn(false)
     setProducts([])
     setError(null)
+    hasLoadedAdminDataRef.current = false
     apiService.adminLogout()
   }
 

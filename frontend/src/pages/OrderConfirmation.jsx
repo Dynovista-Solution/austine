@@ -1,17 +1,61 @@
-import { useLocation, Link } from 'react-router-dom'
+import { useLocation, useParams, useSearchParams, Link } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
 import { CheckCircleIcon } from '@heroicons/react/24/solid'
 import { formatINR } from '../utils/formatCurrency.js'
+import apiService from '../services/api.js'
+import { useCart } from '../context/CartContext.jsx'
 
 export default function OrderConfirmation() {
   const { state } = useLocation()
-  const order = state?.order
+  const { orderNumber: orderNumberParam } = useParams()
+  const [searchParams] = useSearchParams()
+  const { clear } = useCart()
+  const [order, setOrder] = useState(state?.order || null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const hasCleared = useRef(false)
 
-  if (!order) {
+  // Clear cart on order confirmation (for both COD and PayU success)
+  useEffect(() => {
+    // Clear for PayU success or when order state exists (COD)
+    if (!hasCleared.current && (searchParams.get('success') === 'true' || (state?.order && !searchParams.get('success')))) {
+      clear()
+      hasCleared.current = true
+    }
+  }, [searchParams, state?.order, clear])
+
+  // Fetch order if coming from PayU redirect (has orderNumber param)
+  useEffect(() => {
+    if (orderNumberParam && !state?.order) {
+      setLoading(true)
+      apiService.getOrderByOrderNumber(orderNumberParam)
+        .then(data => {
+          setOrder(data)
+          setLoading(false)
+        })
+        .catch(err => {
+          console.error('Failed to fetch order:', err)
+          setError('Failed to load order details')
+          setLoading(false)
+        })
+    }
+  }, [orderNumberParam, state?.order])
+
+  if (loading) {
     return (
-      <main className="w-full px-4 sm:px-6 lg:px-8 py-16 min-h-[50vh] flex flex-col items-center justify-center">
-        <h1 className="text-xl font-semibold text-gray-900 mb-4">No order found</h1>
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-16 min-h-[50vh] flex flex-col items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mb-4"></div>
+        <p className="text-gray-600">Loading order details...</p>
+      </div>
+    )
+  }
+
+  if (error || !order) {
+    return (
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-16 min-h-[50vh] flex flex-col items-center justify-center">
+        <h1 className="text-xl font-semibold text-gray-900 mb-4">{error || 'No order found'}</h1>
         <Link to="/" className="text-sm text-blue-600 hover:underline">Return home</Link>
-      </main>
+      </div>
     )
   }
 
@@ -22,9 +66,8 @@ export default function OrderConfirmation() {
   const orderTotal = order.total || order.subtotal || 0
 
   return (
-    <main className="w-full px-4 sm:px-6 lg:px-8 py-16 min-h-[60vh]">
-      <div className="max-w-2xl mx-auto">
-        {/* Success Icon and Message */}
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-16 min-h-[60vh]">
+      <div className="max-w-2xl mx-auto">\n        {/* Success Icon and Message */}
         <div className="flex flex-col items-center text-center mb-8">
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
             <CheckCircleIcon className="w-10 h-10 text-green-600" />
@@ -84,9 +127,23 @@ export default function OrderConfirmation() {
               </div>
             )
           })}
-          <div className="bg-gray-50 p-4 flex justify-between text-base font-semibold text-gray-900">
-            <span>Total</span>
-            <span>{formatINR(orderTotal)}</span>
+          <div className="bg-gray-50 p-4 space-y-2">
+            <div className="flex justify-between text-sm text-gray-600">
+              <span>Subtotal</span>
+              <span>{formatINR(orderTotal)}</span>
+            </div>
+            <div className="flex justify-between text-sm text-gray-600">
+              <span>Tax (5% incl.)</span>
+              <span>{formatINR(orderTotal * (5 / 105))}</span>
+            </div>
+            <div className="flex justify-between text-sm text-gray-600">
+              <span>Shipping</span>
+              <span>Included in price</span>
+            </div>
+            <div className="flex justify-between border-t border-gray-200 pt-2 text-base font-semibold text-gray-900">
+              <span>Total</span>
+              <span>{formatINR(orderTotal)}</span>
+            </div>
           </div>
         </div>
 
@@ -99,13 +156,13 @@ export default function OrderConfirmation() {
             Continue Shopping
           </Link>
           <Link 
-            to="/account/orders" 
+            to="/profile" 
             className="inline-flex items-center justify-center px-6 py-3 border border-gray-300 text-gray-700 text-sm font-semibold rounded-md hover:bg-gray-50 transition-colors"
           >
-            View Orders
+            View My Profile
           </Link>
         </div>
       </div>
-    </main>
+    </div>
   )
 }

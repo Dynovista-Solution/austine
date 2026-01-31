@@ -16,7 +16,7 @@ export default function AdminSettingsPage() {
   const [activeTab, setActiveTab] = useState('general')
   const [settings, setSettings] = useState({
     general: {
-      siteName: 'AUSTINE',
+      siteName: 'Austine Lifestyle LLP',
       siteDescription: 'Luxury Fashion & Lifestyle',
       contactEmail: 'contact@austine.com',
       contactPhone: '+1 (555) 123-4567',
@@ -223,28 +223,28 @@ export default function AdminSettingsPage() {
                 description="Configure shipping rates and options"
               >
                 <SettingField
-                  label="Free Shipping Threshold (€)"
+                  label="Free Shipping Threshold (₹)"
                   type="number"
                   value={settings.shipping.freeShippingThreshold}
                   onChange={(value) => handleSettingChange('shipping', 'freeShippingThreshold', parseFloat(value))}
                   placeholder="100"
                 />
                 <SettingField
-                  label="Standard Shipping (€)"
+                  label="Standard Shipping (₹)"
                   type="number"
                   value={settings.shipping.standardShipping}
                   onChange={(value) => handleSettingChange('shipping', 'standardShipping', parseFloat(value))}
                   placeholder="10"
                 />
                 <SettingField
-                  label="Express Shipping (€)"
+                  label="Express Shipping (₹)"
                   type="number"
                   value={settings.shipping.expressShipping}
                   onChange={(value) => handleSettingChange('shipping', 'expressShipping', parseFloat(value))}
                   placeholder="25"
                 />
                 <SettingField
-                  label="International Shipping (€)"
+                  label="International Shipping (₹)"
                   type="number"
                   value={settings.shipping.internationalShipping}
                   onChange={(value) => handleSettingChange('shipping', 'internationalShipping', parseFloat(value))}

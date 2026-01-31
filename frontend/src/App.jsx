@@ -4,8 +4,10 @@ import ProductsRow from './components/ProductsRow'
 import ProductDetail from './pages/ProductDetail'
 import CheckoutPage from './pages/CheckoutPage'
 import OrderConfirmation from './pages/OrderConfirmation'
+import PaymentFailed from './pages/PaymentFailed'
 import WishlistPage from './pages/WishlistPage'
 import ProfilePage from './pages/ProfilePage'
+import MyOrdersPage from './pages/MyOrdersPage'
 import LoginSignupPage from './pages/LoginSignupPage'
 import CartPage from './pages/CartPage'
 import { Routes, Route, useLocation } from 'react-router-dom'
@@ -20,6 +22,7 @@ import AdminProductsPage from './admin/AdminProductsPage'
 import AdminOrdersPage from './admin/AdminOrdersPage'
 import AdminOrderDetailPage from './admin/AdminOrderDetailPage'
 import AdminUsersPage from './admin/AdminUsersPage'
+import AdminAdminsPage from './admin/AdminAdminsPage'
 import AdminUserEditPage from './admin/AdminUserEditPage'
 import AdminContentPage from './admin/AdminContentPage'
 import AdminProductForm from './admin/AdminProductForm'
@@ -69,9 +72,12 @@ function App() {
           <Route path="/cart" element={<CartPage />} />
           <Route path="/checkout" element={<CheckoutPage />} />
           <Route path="/order-confirmation" element={<OrderConfirmation />} />
+          <Route path="/order-confirmation/:orderNumber" element={<OrderConfirmation />} />
+          <Route path="/payment-failed" element={<PaymentFailed />} />
           <Route path="/wishlist" element={<WishlistPage />} />
           <Route path="/login" element={<LoginSignupPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/orders" element={<MyOrdersPage />} />
           <Route path="/terms" element={<TermsAndConditions />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/shipping-policy" element={<ShippingPolicy />} />
@@ -88,6 +94,7 @@ function App() {
           <Route path="/admin/orders" element={<AdminLayout><AdminOrdersPage /></AdminLayout>} />
           <Route path="/admin/orders/:id" element={<AdminLayout><AdminOrderDetailPage /></AdminLayout>} />
           <Route path="/admin/users" element={<AdminLayout><AdminUsersPage /></AdminLayout>} />
+          <Route path="/admin/admins" element={<AdminLayout><AdminAdminsPage /></AdminLayout>} />
           <Route path="/admin/users/:id/edit" element={<AdminLayout><AdminUserEditPage /></AdminLayout>} />
           <Route path="/admin/content" element={<AdminLayout><AdminContentPage /></AdminLayout>} />
           <Route path="/admin/lookbook" element={<AdminLayout><AdminLookbookPage /></AdminLayout>} />

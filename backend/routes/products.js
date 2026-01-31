@@ -271,7 +271,9 @@ router.put('/:id', [
   body('name').optional().trim().isLength({ min: 1, max: 100 }),
   body('sku').optional().trim().isLength({ min: 1, max: 50 }),
   body('description').optional().trim().isLength({ min: 1, max: 1000 }),
-  body('price').optional().isFloat({ min: 0 })
+  body('price').optional().isFloat({ min: 0 }),
+  body('originalPrice').optional({ nullable: true }).isFloat({ min: 0 }),
+  body('showOriginalPrice').optional().isBoolean()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -292,7 +294,7 @@ router.put('/:id', [
     }
 
     // Assign only whitelisted fields
-    const updatable = ['name','sku','description','price','originalPrice','category','subcategory','sizes','colors','colorImages','inventory','isFeatured','isActive','tags','brand'];
+    const updatable = ['name','sku','description','price','originalPrice','showOriginalPrice','category','subcategory','sizes','colors','colorImages','sizeChartImage','inventory','isFeatured','isActive','tags','brand'];
     for (const key of updatable) {
       if (Object.prototype.hasOwnProperty.call(req.body, key)) {
         product[key] = req.body[key];

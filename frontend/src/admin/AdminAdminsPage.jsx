@@ -8,12 +8,12 @@ import {
   TrashIcon,
   UserPlusIcon,
   MagnifyingGlassIcon,
-  ShieldCheckIcon,
-  UserIcon
+  ShieldCheckIcon
 } from '@heroicons/react/24/outline'
 
 const ROLE_OPTIONS = [
-  { value: 'customer', label: 'Customer' }
+  { value: 'warehouse_user', label: 'Warehouse User' },
+  { value: 'admin', label: 'Admin' }
 ]
 
 const STATUS_OPTIONS = [
@@ -26,12 +26,12 @@ const formatRoleLabel = (role) => role.replace(/_/g, ' ')
 const EMPTY_FORM = {
   name: '',
   email: '',
-  role: 'customer',
+  role: 'warehouse_user',
   status: 'active',
   password: ''
 }
 
-export default function AdminUsersPage() {
+export default function AdminAdminsPage() {
   const { isAdminLoggedIn } = useAdmin()
   const navigate = useNavigate()
   const [users, setUsers] = useState([])
@@ -41,9 +41,6 @@ export default function AdminUsersPage() {
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0, limit: 20 })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  
-  // Date filter state
-  const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' })
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [formData, setFormData] = useState(EMPTY_FORM)
@@ -54,12 +51,10 @@ export default function AdminUsersPage() {
   const getRoleColor = useCallback((role) => {
     switch (role) {
       case 'admin':
-        return 'bg-red-100 text-red-800'
-      case 'premium_customer':
-        return 'bg-purple-100 text-purple-800'
       case 'super_admin':
         return 'bg-red-100 text-red-800'
-      case 'customer':
+      case 'warehouse_user':
+        return 'bg-orange-100 text-orange-800'
       default:
         return 'bg-blue-100 text-blue-800'
     }
@@ -73,37 +68,32 @@ export default function AdminUsersPage() {
     try {
       setLoading(true)
       setError('')
-      const params = { 
-        page: targetPage, 
-        search: searchValue,
-        role: 'customer'  // Only fetch customers
-      }
-      if (dateRange.startDate) params.startDate = dateRange.startDate
-      if (dateRange.endDate) params.endDate = dateRange.endDate
-      
-      const response = await apiService.getUsers(params)
+      const response = await apiService.getUsers({ page: targetPage, search: searchValue })
       if (!response.success) {
         throw new Error(response.message || 'Failed to load users')
       }
       const payload = response.data || {}
-      const list = Array.isArray(payload.users) ? payload.users : []
-      const paginationData = payload.pagination || {}
+      const allUsers = Array.isArray(payload.users) ? payload.users : []
       
-      setUsers(list)
+      // Filter to only show admins and warehouse users
+      const adminUsers = allUsers.filter(u => u.role === 'admin' || u.role === 'super_admin' || u.role === 'warehouse_user')
+      
+      setUsers(adminUsers)
       setPagination({
-        page: paginationData.page || 1,
-        limit: paginationData.limit || 20,
-        total: paginationData.total || list.length,
-        totalPages: paginationData.totalPages || 1
+        page: 1,
+        limit: 100,
+        total: adminUsers.length,
+        totalPages: 1
       })
+      setPage(1)
     } catch (err) {
-      console.error('Failed to load users:', err)
+      console.error('Failed to load admins:', err)
       setUsers([])
-      setError(err.message || 'Failed to load users')
+      setError(err.message || 'Failed to load admins')
     } finally {
       setLoading(false)
     }
-  }, [dateRange])
+  }, [])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -116,7 +106,7 @@ export default function AdminUsersPage() {
     if (isAdminLoggedIn) {
       fetchUsers(page, debouncedSearch)
     }
-  }, [fetchUsers, page, debouncedSearch, isAdminLoggedIn, dateRange])
+  }, [fetchUsers, page, debouncedSearch, isAdminLoggedIn])
 
   const handleSearchChange = (event) => {
     setSearchTerm(event.target.value)
@@ -130,7 +120,6 @@ export default function AdminUsersPage() {
   }
 
   const openEditModal = (user) => {
-    // Kept name for minimal changes: now navigates to the edit page.
     navigate(`/admin/users/${user.id}/edit`)
   }
 
@@ -159,22 +148,16 @@ export default function AdminUsersPage() {
       }
       const response = await apiService.createUser(payload)
       if (!response.success) {
-        throw new Error(response.message || 'Failed to create user')
+        throw new Error(response.message || 'Failed to create admin user')
       }
       closeModals()
-      if (page === 1) {
-        fetchUsers(1, debouncedSearch)
-      } else {
-        setPage(1)
-      }
+      fetchUsers(1, debouncedSearch)
     } catch (err) {
-      setModalError(err.message || 'Failed to create user')
+      setModalError(err.message || 'Failed to create admin user')
     } finally {
       setModalLoading(false)
     }
   }
-
-  // Editing happens on /admin/users/:id/edit
 
   const handleDeleteRequest = (user) => {
     setDeleteDialog({ isOpen: true, user })
@@ -189,17 +172,18 @@ export default function AdminUsersPage() {
       if (!response.success) {
         throw new Error(response.message || 'Failed to delete user')
       }
-      const shouldGoBack = users.length === 1 && page > 1
-      const nextPage = shouldGoBack ? page - 1 : page
-      if (shouldGoBack) {
-        setPage(nextPage)
-      } else {
-        fetchUsers(page, debouncedSearch)
-      }
+      fetchUsers(page, debouncedSearch)
     } catch (err) {
       setError(err.message || 'Failed to delete user')
     }
   }
+
+  // Filter users based on search
+  const filteredUsers = users.filter(user => {
+    if (!debouncedSearch) return true
+    const search = debouncedSearch.toLowerCase()
+    return user.name?.toLowerCase().includes(search) || user.email?.toLowerCase().includes(search)
+  })
 
   if (!isAdminLoggedIn) {
     return (
@@ -213,83 +197,33 @@ export default function AdminUsersPage() {
     <div>
       <div className="sm:flex sm:items-center">
         <div className="sm:flex-auto">
-          <h1 className="text-2xl font-semibold text-gray-900">Users Management</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">Admin Management</h1>
           <p className="mt-2 text-sm text-gray-700">
-            Manage user accounts, roles, and access.
+            Manage admin accounts and warehouse users.
           </p>
         </div>
         <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
           <button
             onClick={openCreateModal}
-            className="inline-flex items-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+            className="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
           >
             <UserPlusIcon className="-ml-0.5 mr-1.5 h-5 w-5" />
-            Add User
+            Add Admin
           </button>
         </div>
       </div>
 
       <div className="mt-6">
-        {/* Date Filter */}
-        <div className="mb-4 bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="flex flex-wrap items-center gap-4 justify-between">
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700">From:</label>
-                <input
-                  type="date"
-                  value={dateRange.startDate}
-                  onChange={(e) => {
-                    setDateRange(prev => ({ ...prev, startDate: e.target.value }))
-                    setPage(1)
-                  }}
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700">To:</label>
-                <input
-                  type="date"
-                  value={dateRange.endDate}
-                  onChange={(e) => {
-                    setDateRange(prev => ({ ...prev, endDate: e.target.value }))
-                    setPage(1)
-                  }}
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              {(dateRange.startDate || dateRange.endDate) && (
-                <button
-                  onClick={() => {
-                    setDateRange({ startDate: '', endDate: '' })
-                    setPage(1)
-                  }}
-                  className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
-                >
-                  Clear Dates
-                </button>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-700">Total:</span>
-              <span className="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-800">
-                {pagination.total} {pagination.total === 1 ? 'User' : 'Users'}
-              </span>
-            </div>
-          </div>
-        </div>
-        
-        {/* Search Bar */}
         <div className="relative">
           <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
             <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
           </div>
           <input
             type="text"
-            placeholder="Search users by name or email..."
+            placeholder="Search admins by name or email..."
             value={searchTerm}
             onChange={handleSearchChange}
-            className="block w-full rounded-md border-0 bg-white py-1.5 pl-10 pr-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-500 sm:text-sm sm:leading-6"
+            className="block w-full rounded-md border-0 bg-white py-1.5 pl-10 pr-3 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-red-500 sm:text-sm sm:leading-6"
           />
         </div>
         {error && (
@@ -305,19 +239,13 @@ export default function AdminUsersPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
-                      User
+                      Admin User
                     </th>
                     <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                       Role
                     </th>
                     <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                       Status
-                    </th>
-                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                      Orders
-                    </th>
-                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                      Total Spent
                     </th>
                     <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                       Join Date
@@ -330,33 +258,28 @@ export default function AdminUsersPage() {
                 <tbody className="divide-y divide-gray-200 bg-white">
                   {loading && (
                     <tr>
-                      <td colSpan={7} className="px-3 py-6 text-center text-sm text-gray-500">
-                        Loading users...
+                      <td colSpan={5} className="px-3 py-6 text-center text-sm text-gray-500">
+                        Loading admins...
                       </td>
                     </tr>
                   )}
-                  {!loading && users.length === 0 && (
+                  {!loading && filteredUsers.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-3 py-6 text-center text-sm text-gray-500">
-                        No users found.
+                      <td colSpan={5} className="px-3 py-6 text-center text-sm text-gray-500">
+                        No admin users found.
                       </td>
                     </tr>
                   )}
-                  {users.map((user) => {
-                    const canDelete = !['admin', 'super_admin'].includes(user.role)
+                  {filteredUsers.map((user) => {
+                    const canDelete = user.role !== 'super_admin'
                     const joinDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '—'
-                    const totalSpent = Number(user.totalSpent || 0)
                     return (
                       <tr key={user.id}>
                         <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
                           <div className="flex items-center">
                             <div className="w-10 h-10 flex-shrink-0">
                               <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
-                                {user.role === 'admin' || user.role === 'super_admin' ? (
-                                  <ShieldCheckIcon className="w-5 h-5 text-gray-600" />
-                                ) : (
-                                  <UserIcon className="w-5 h-5 text-gray-600" />
-                                )}
+                                <ShieldCheckIcon className="w-5 h-5 text-gray-600" />
                               </div>
                             </div>
                             <div className="ml-4">
@@ -374,12 +297,6 @@ export default function AdminUsersPage() {
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(user.status)}`}>
                             {user.status === 'inactive' ? 'Inactive' : 'Active'}
                           </span>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                          {user.ordersCount ?? 0}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                          ₹{totalSpent.toFixed(2)}
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                           {joinDate}
@@ -414,33 +331,10 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between mt-4 text-sm text-gray-600">
-        <p>
-          Showing page {pagination.page} of {pagination.totalPages} ({pagination.total} users)
-        </p>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-            disabled={page <= 1}
-            className="px-3 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Previous
-          </button>
-          <button
-            onClick={() => setPage((prev) => Math.min(pagination.totalPages, prev + 1))}
-            disabled={page >= pagination.totalPages}
-            className="px-3 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Next
-          </button>
-        </div>
-      </div>
-
-      <UserModal
+      <AdminModal
         isOpen={showAddModal}
-        mode="create"
-        title="Add New User"
-        submitText="Add User"
+        title="Add New Admin User"
+        submitText="Add Admin"
         formData={formData}
         setFormData={setFormData}
         onClose={closeModals}
@@ -449,14 +343,12 @@ export default function AdminUsersPage() {
         error={modalError}
       />
 
-      {/* Edit now happens on a dedicated page: /admin/users/:id/edit */}
-
       <WarningDialog
         isOpen={deleteDialog.isOpen}
         onClose={() => setDeleteDialog({ isOpen: false, user: null })}
         onConfirm={confirmDeleteUser}
-        title="Delete User"
-        message={deleteDialog.user ? `Are you sure you want to delete "${deleteDialog.user.name}"? This action cannot be undone.` : 'Are you sure you want to delete this user?'}
+        title="Delete Admin User"
+        message={deleteDialog.user ? `Are you sure you want to delete "${deleteDialog.user.name}"? This action cannot be undone.` : 'Are you sure you want to delete this admin user?'}
         confirmText="Delete User"
         cancelText="Cancel"
       />
@@ -464,9 +356,8 @@ export default function AdminUsersPage() {
   )
 }
 
-function UserModal({
+function AdminModal({
   isOpen,
-  mode,
   title,
   submitText,
   formData,
@@ -477,8 +368,6 @@ function UserModal({
   error
 }) {
   if (!isOpen) return null
-
-  const isEdit = mode === 'edit'
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -500,7 +389,7 @@ function UserModal({
               type="text"
               value={formData.name}
               onChange={(event) => setFormData((prev) => ({ ...prev, name: event.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
               placeholder="Enter full name"
             />
           </div>
@@ -513,7 +402,7 @@ function UserModal({
               type="email"
               value={formData.email}
               onChange={(event) => setFormData((prev) => ({ ...prev, email: event.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
               placeholder="Enter email address"
             />
           </div>
@@ -525,7 +414,7 @@ function UserModal({
             <select
               value={formData.role}
               onChange={(event) => setFormData((prev) => ({ ...prev, role: event.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
             >
               {ROLE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -542,7 +431,7 @@ function UserModal({
             <select
               value={formData.status}
               onChange={(event) => setFormData((prev) => ({ ...prev, status: event.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
             >
               {STATUS_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -554,14 +443,14 @@ function UserModal({
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              {isEdit ? 'Reset Password' : 'Temporary Password *'}
+              Password *
             </label>
             <input
               type="password"
               value={formData.password}
               onChange={(event) => setFormData((prev) => ({ ...prev, password: event.target.value }))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder={isEdit ? 'Leave blank to keep current password' : 'Set an initial password'}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+              placeholder="Set an initial password"
             />
             <p className="mt-1 text-xs text-gray-500">
               Password must be at least 6 characters.
@@ -580,7 +469,7 @@ function UserModal({
           <button
             onClick={onSubmit}
             disabled={loading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? 'Saving...' : submitText}
           </button>

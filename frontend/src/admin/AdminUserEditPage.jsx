@@ -5,7 +5,7 @@ import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
 
 const ROLE_OPTIONS = [
   { value: 'customer', label: 'Customer' },
-  { value: 'premium_customer', label: 'Premium Customer' },
+  { value: 'warehouse_user', label: 'Warehouse User' },
   { value: 'admin', label: 'Admin' }
 ]
 

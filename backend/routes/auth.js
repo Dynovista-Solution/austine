@@ -26,12 +26,17 @@ router.post('/admin/login', [
     const { email, password } = req.body;
     const user = await User.authenticate(email, password);
 
-    if (user.role !== 'admin' && user.role !== 'super_admin') {
+    console.log('Admin login attempt - User role:', user.role);
+
+    if (user.role !== 'admin' && user.role !== 'super_admin' && user.role !== 'warehouse_user') {
+      console.log('Access denied for role:', user.role);
       return res.status(403).json({
         success: false,
         message: 'Admin access required.'
       });
     }
+
+    console.log('Admin login successful for role:', user.role);
 
     const token = generateToken(user.id);
     return res.json({

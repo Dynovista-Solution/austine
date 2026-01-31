@@ -5,6 +5,7 @@ import { useCart } from '../context/CartContext.jsx'
 import { useWishlist } from '../context/WishlistContext.jsx'
 import { useContent } from '../context/ContentContext.jsx'
 import SearchDropdown from './SearchDropdown.jsx'
+import { formatBrandName } from '../utils/brandName.js'
 
 export default function Header() {
   const headerRef = useRef(null)
@@ -12,9 +13,14 @@ export default function Header() {
   const [search, setSearch] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchTopOffset, setSearchTopOffset] = useState(0)
+  const [activeMegaCategory, setActiveMegaCategory] = useState(null)
+  const [activeMegaTranslateX, setActiveMegaTranslateX] = useState(0)
+  const [megaLockedClosed, setMegaLockedClosed] = useState(false)
   const { items } = useCart()
   const { ids: wishlistIds } = useWishlist()
   const { content } = useContent()
+
+  const siteName = formatBrandName(content?.branding?.siteName)
 
   // Use dynamic navigation from content context
   const categories = content?.homepage?.header?.navigation || []
@@ -52,6 +58,44 @@ export default function Header() {
 
   const openSearch = () => setSearchOpen(true)
 
+  const closeMegaOnClick = () => {
+    // Using pure CSS hover means the dropdown can stay visible while the cursor
+    // is still over the nav area during navigation. Lock it closed on click.
+    setMegaLockedClosed(true)
+  }
+
+  const handleMegaEnter = (event, categoryName) => {
+    setActiveMegaCategory(categoryName)
+
+    try {
+      const liEl = event.currentTarget
+      const linkEl = liEl.querySelector('[data-nav-link]')
+      const leftColEl = liEl.querySelector('[data-mega-left]')
+      if (!linkEl || !leftColEl) return
+
+      const linkRect = linkEl.getBoundingClientRect()
+      const leftRect = leftColEl.getBoundingClientRect()
+
+      // Align the left edge of submenu items under the left edge of the top menu label.
+      // Subcategory links have px-3 (12px), so subtract that to align text.
+      const desired = Math.round(linkRect.left - leftRect.left - 12)
+
+      // Keep the list inside the left column (avoid overlapping the image column).
+      const minListWidth = 240
+      const maxTranslate = Math.max(0, Math.round(leftRect.width - minListWidth))
+      const clamped = Math.min(Math.max(0, desired), maxTranslate)
+      setActiveMegaTranslateX(clamped)
+    } catch {
+      // Ignore measurement errors (e.g., during resize)
+    }
+  }
+
+  const handleMegaLeave = () => {
+    setActiveMegaCategory(null)
+    setActiveMegaTranslateX(0)
+    setMegaLockedClosed(false)
+  }
+
   return (
     <header ref={headerRef} className="sticky top-0 z-50">
       {/* Top promo bar */}
@@ -74,7 +118,7 @@ export default function Header() {
         <div className="w-full px-4 sm:px-6 lg:px-8">
           <div className="relative flex items-center gap-4">
             {/* Left: welcome text */}
-            <div className="hidden sm:block tracking-wide">Welcome To AUSTINE</div>
+            <div className="hidden sm:block tracking-wide">Welcome To {siteName}</div>
             <div className="sm:hidden tracking-wide">WELCOME</div>
             {/* Absolute centered track order link */}
             <a
@@ -140,7 +184,7 @@ export default function Header() {
               <Link to="/" className="inline-flex items-center" aria-label="Home">
                 <img
                   src={content?.branding?.logoUrl || '/logo.jpg'}
-                  alt={content?.branding?.siteName || 'AUSTINE'}
+                  alt={siteName}
                   className="h-16 lg:h-20 object-contain"
                 />
               </Link>
@@ -150,27 +194,48 @@ export default function Header() {
             <nav className="hidden lg:flex ml-8">
               <ul className="flex items-center gap-6 xl:gap-8">
                 {categories.map((category) => (
-                  <li key={category.name} className="group">
+                  <li
+                    key={category.name}
+                    className="group"
+                    onMouseEnter={(e) => handleMegaEnter(e, category.name)}
+                    onMouseLeave={handleMegaLeave}
+                  >
                     <Link
+                      data-nav-link
                       to={`/category/${encodeURIComponent(category.name)}`}
+                      onClick={closeMegaOnClick}
                       className="text-xs font-medium text-gray-900 hover:text-black tracking-wide uppercase py-2 block"
                     >
                       {category.name}
                     </Link>
                     {/* Full-width mega menu */}
-                    <div className="pointer-events-none opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
+                    <div
+                      className={
+                        megaLockedClosed
+                          ? 'pointer-events-none opacity-0 invisible'
+                          : 'pointer-events-none opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200'
+                      }
+                    >
                       <div className="absolute left-0 right-0 top-full w-full z-50 overflow-x-hidden">
                         <div className="pointer-events-auto bg-white border-t border-gray-200 shadow-xl">
                           <div className="w-full max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-6 grid grid-cols-12 gap-8">
                             {/* Left: subcategories (if any) */}
-                            <div className="col-span-12 md:col-span-7 lg:col-span-8">
+                            <div className="col-span-12 md:col-span-7 lg:col-span-8" data-mega-left>
                               {category.subcategories && category.subcategories.length > 0 ? (
-                                <div className="flex flex-col">
+                                <div
+                                  className="flex flex-col transition-transform duration-200"
+                                  style={
+                                    activeMegaCategory === category.name
+                                      ? { transform: `translateX(${activeMegaTranslateX}px)` }
+                                      : undefined
+                                  }
+                                >
                                   {category.subcategories.map((subcategory) => (
                                     <Link
                                       key={subcategory}
                                       to={`/category/${encodeURIComponent(category.name)}?sub=${encodeURIComponent(subcategory)}`}
-                                      className="block px-3 py-2 text-xs text-gray-800 hover:bg-gray-50 rounded-sm"
+                                      onClick={closeMegaOnClick}
+                                      className="block px-3 py-2 text-sm text-gray-800 hover:bg-gray-50 rounded-sm"
                                     >
                                       {subcategory}
                                     </Link>
@@ -184,7 +249,11 @@ export default function Header() {
                             </div>
                             {/* Right: image */}
                             <div className="hidden md:block col-span-12 md:col-span-5 lg:col-span-4">
-                              <Link to={category.link || `/category/${encodeURIComponent(category.name)}`} className="block">
+                              <Link
+                                to={category.link || `/category/${encodeURIComponent(category.name)}`}
+                                className="block"
+                                onClick={closeMegaOnClick}
+                              >
                                 <div className="aspect-[4/5] w-full overflow-hidden bg-gray-100 cursor-pointer">
                                   <img
                                     src={category.imageUrl || '/hero.jpg'}
@@ -300,7 +369,7 @@ export default function Header() {
             <div className="flex items-center justify-between h-12">
               <img
                 src={content?.branding?.logoUrl || '/logo.jpg'}
-                alt={content?.branding?.siteName || 'AUSTINE'}
+                alt={siteName}
                 className="h-10 object-contain"
               />
               <button
@@ -325,7 +394,7 @@ export default function Header() {
                             <Link
                               key={subcategory}
                               to={`/category/${encodeURIComponent(category.name)}?sub=${encodeURIComponent(subcategory)}`}
-                              className="block py-1 text-xs text-gray-600 hover:text-gray-900"
+                              className="block py-1 text-sm text-gray-600 hover:text-gray-900"
                               onClick={() => setMobileOpen(false)}
                             >
                               {subcategory}

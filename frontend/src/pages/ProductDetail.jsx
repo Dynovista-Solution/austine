@@ -7,6 +7,7 @@ import { useCart } from '../context/CartContext.jsx'
 import { useAdmin } from '../admin/AdminContext.jsx'
 import { useContent } from '../context/ContentContext.jsx'
 import WarningDialog from '../components/WarningDialog.jsx'
+import Lightbox from '../components/Lightbox'
 import { formatINR } from '../utils/formatCurrency.js'
 import apiService from '../services/api'
 
@@ -14,8 +15,11 @@ export default function ProductDetail() {
   const { id } = useParams()
   const { getProductById } = useAdmin()
   const { content } = useContent()
-  const [product, setProduct] = useState(() => getProductById(id))
+  const [product, setProduct] = useState(null)
   const navigate = useNavigate()
+  const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [lightboxIndex, setLightboxIndex] = useState(0)
+  const [lightboxImages, setLightboxImages] = useState([])
   const [selectedVariant, setSelectedVariant] = useState(product?.variants?.[1]?.key || product?.variants?.[0]?.key)
   const [selectedSize, setSelectedSize] = useState('')
   const [selectedColor, setSelectedColor] = useState('')
@@ -89,15 +93,16 @@ export default function ProductDetail() {
 
   useEffect(() => {
     let ignore = false
+    // Reset product when id changes
+    setProduct(null)
+    
     async function load() {
-      if (!product) {
-        try {
-          const res = await apiService.getProduct(id)
-          const p = res?.data?.product || res?.data
-          if (!ignore) setProduct(p)
-        } catch (e) {
-          // no-op; keep not found state
-        }
+      try {
+        const res = await apiService.getProduct(id)
+        const p = res?.data?.product || res?.data
+        if (!ignore) setProduct(p)
+      } catch (e) {
+        if (!ignore) setProduct(null)
       }
     }
     load()
@@ -111,6 +116,12 @@ export default function ProductDetail() {
       setSelectedColor(product.colors?.[0] || '')
     }
   }, [product])
+
+  // Close lightbox when switching products/colors so we don't show stale images
+  useEffect(() => {
+    setLightboxOpen(false)
+    setLightboxIndex(0)
+  }, [id, selectedColor])
 
   // Calculate current inventory based on selected color and size
   const currentInventory = useMemo(() => {
@@ -137,6 +148,57 @@ export default function ProductDetail() {
     return [fmt.format(d1), fmt.format(d2)]
   }, [])
 
+  // Build media gallery: show color-specific images when color is selected, otherwise show placeholder
+  // (Must be before early return to satisfy Rules of Hooks)
+  const { mediaList, hasColorImages, imageMedia, videoMedia } = useMemo(() => {
+    if (!product) {
+      return { mediaList: [], hasColorImages: false, imageMedia: [], videoMedia: [] }
+    }
+
+    let list = []
+    let hasImages = false
+
+    if (selectedColor && product.colorImages && product.colorImages[selectedColor]) {
+      list = product.colorImages[selectedColor] || []
+      hasImages = list.length > 0
+    } else if (!selectedColor) {
+      const firstColor = product.colors?.[0]
+      if (firstColor && product.colorImages && product.colorImages[firstColor]) {
+        list = product.colorImages[firstColor] || []
+        hasImages = list.length > 0
+      }
+    }
+
+    const imgs = list.filter(m => !m.type || m.type === 'image')
+    const vids = list.filter(m => m.type === 'video')
+
+    return { mediaList: list, hasColorImages: hasImages, imageMedia: imgs, videoMedia: vids }
+  }, [product, selectedColor])
+
+  // Update lightbox images when product/color changes
+  useEffect(() => {
+    if (!product) {
+      setLightboxImages([])
+      return
+    }
+    const colorLabel = selectedColor ? ` - ${selectedColor}` : ''
+    const imgs = (Array.isArray(imageMedia) ? imageMedia : [])
+      .filter(m => m && m.url)
+      .map((m, idx) => ({
+        url: m.url,
+        alt: `${product?.name || 'Product'}${colorLabel} ${idx + 1}`
+      }))
+    setLightboxImages(imgs)
+  }, [imageMedia, product, selectedColor])
+
+  const lightboxIndexByUrl = useMemo(() => {
+    const map = new Map()
+    lightboxImages.forEach((img, idx) => {
+      if (img?.url) map.set(String(img.url), idx)
+    })
+    return map
+  }, [lightboxImages])
+
   if (!product) {
     return (
       <main className="w-full px-4 sm:px-6 lg:px-8 py-12">
@@ -147,26 +209,6 @@ export default function ProductDetail() {
       </main>
     )
   }
-
-  // Build media gallery: show color-specific images when color is selected, otherwise show placeholder
-  let mediaList = []
-  let hasColorImages = false
-
-  if (selectedColor && product.colorImages && product.colorImages[selectedColor]) {
-    // Use color-specific images
-    mediaList = product.colorImages[selectedColor] || []
-    hasColorImages = mediaList.length > 0
-  } else if (!selectedColor) {
-    // No color selected - show placeholder or first available color's images
-    const firstColor = product.colors?.[0]
-    if (firstColor && product.colorImages && product.colorImages[firstColor]) {
-      mediaList = product.colorImages[firstColor] || []
-      hasColorImages = mediaList.length > 0
-    }
-  }
-
-  const imageMedia = mediaList.filter(m => !m.type || m.type === 'image')
-  const videoMedia = mediaList.filter(m => m.type === 'video')
 
   // Build ordered gallery: first image, then video, then remaining images
   const gallerySlots = []
@@ -221,11 +263,33 @@ export default function ProductDetail() {
                       alt={`${product.name} - ${selectedColor} video`}
                     />
                   ) : (
-                    <img
-                      src={slot.url}
-                      alt={`${product.name} - ${selectedColor} ${index + 1}`}
-                      className="w-full h-full object-cover"
-                    />
+                    <button
+                      type="button"
+                      className="w-full h-full"
+                      aria-label="Open image"
+                      onClick={() => {
+                        // Restore product images to lightbox (in case size chart was viewed)
+                        const colorLabel = selectedColor ? ` - ${selectedColor}` : ''
+                        const imgs = (Array.isArray(imageMedia) ? imageMedia : [])
+                          .filter(m => m && m.url)
+                          .map((m, idx) => ({
+                            url: m.url,
+                            alt: `${product?.name || 'Product'}${colorLabel} ${idx + 1}`
+                          }))
+                        setLightboxImages(imgs)
+                        
+                        // Find the index of the clicked image
+                        const idx = imgs.findIndex(img => img.url === slot.url)
+                        setLightboxIndex(idx >= 0 ? idx : 0)
+                        setLightboxOpen(true)
+                      }}
+                    >
+                      <img
+                        src={slot.url}
+                        alt={`${product.name} - ${selectedColor} ${index + 1}`}
+                        className="w-full h-full object-cover cursor-zoom-in"
+                      />
+                    </button>
                   )}
                 </div>
               ))}
@@ -250,7 +314,19 @@ export default function ProductDetail() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">{product.name}</h1>
-              <div className="mt-1 text-lg text-gray-900">{formatINR(product.price)}</div>
+              {(() => {
+                const currentPrice = Number(product.price || 0)
+                const originalPrice = Number(product.originalPrice || 0)
+                const showOriginal = Number.isFinite(originalPrice) && originalPrice > currentPrice && product.showOriginalPrice !== false
+                return (
+                  <div className="mt-1 flex items-baseline gap-2">
+                    {showOriginal && (
+                      <span className="text-sm text-gray-500 line-through">{formatINR(originalPrice)}</span>
+                    )}
+                    <span className="text-lg text-gray-900">{formatINR(currentPrice)}</span>
+                  </div>
+                )
+              })()}
             </div>
             <button
               aria-label={wished ? 'Remove from wishlist' : 'Add to wishlist'}
@@ -343,7 +419,22 @@ export default function ProductDetail() {
           {/* Size selector */}
           {product.sizes && product.sizes.length > 0 && (
             <div className="mt-5">
-              <h3 className="text-sm font-medium text-gray-900 mb-2">Size</h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-gray-900">Size</h3>
+                {product.sizeChartImage && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLightboxImages([{ url: product.sizeChartImage, alt: 'Size Chart' }])
+                      setLightboxIndex(0)
+                      setLightboxOpen(true)
+                    }}
+                    className="text-xs text-blue-600 hover:text-blue-800 underline"
+                  >
+                    Size Chart
+                  </button>
+                )}
+              </div>
               <div className="flex flex-wrap gap-2">
                 {product.sizes.map(size => (
                   <button
@@ -473,12 +564,21 @@ export default function ProductDetail() {
         </aside>
       </div>
 
+      {lightboxOpen && lightboxImages.length > 0 && (
+        <Lightbox
+          images={lightboxImages}
+          index={lightboxIndex}
+          onChangeIndex={setLightboxIndex}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
+
       {/* Recommended Products Section */}
       <div className="mt-20">
         <div className="w-screen relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] bg-gray-100 py-3 mb-3">
           <h2 className="text-base md:text-lg font-semibold text-center text-gray-900 max-w-7xl mx-auto px-4">Recommended Products</h2>
         </div>
-        <div className="w-screen relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw]">
+        <div className="w-screen relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] px-2">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-0.5">
             {recommendedProducts.map((p) => {
               const pid = p.id || p._id
@@ -512,7 +612,7 @@ export default function ProductDetail() {
               return (
                 <div
                   key={`recommended-${pid}`}
-                  className="group relative"
+                  className="group"
                 >
                   <Link to={`/product/${pid}`} className="block aspect-[4/5] w-full bg-gray-100 overflow-hidden">
                     <img
@@ -521,25 +621,40 @@ export default function ProductDetail() {
                       className="h-full w-full object-cover object-center transition-transform duration-300 group-hover:scale-[1.02]"
                       loading="lazy"
                     />
-                    {/* Bottom-left hover overlay without background */}
-                    <div className="pointer-events-none absolute left-0 right-0 bottom-0 p-3 flex justify-start">
-                      <div className="text-left opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200">
-                        <p className="text-xs font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">{p.name}</p>
-                        <p className="text-xs text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">{formatINR(pPrice)}</p>
-                      </div>
-                    </div>
                   </Link>
-                  <button
-                    onClick={() => handleWishlistClick(pidStr, p.name)}
-                    aria-label={wished ? 'Remove from wishlist' : 'Add to wishlist'}
-                    className={`absolute top-2 right-2 p-2 rounded-full bg-white/80 backdrop-blur border ${wished ? 'border-red-600 text-red-600' : 'border-gray-300 text-gray-700'} hover:bg-white`}
-                  >
-                    {wished ? (
-                      <HeartIconSolid className="h-4 w-4 text-red-600" />
-                    ) : (
-                      <HeartIconOutline className="h-4 w-4" />
-                    )}
-                  </button>
+
+                  {/* Name, price and wishlist button below the image (same as home page) */}
+                  <div className="mt-2 flex items-center justify-between gap-2 px-2">
+                    <div className="flex-1">
+                      <Link to={`/product/${pid}`} className="text-xs font-medium text-gray-900 line-clamp-2 leading-snug hover:underline">{p.name}</Link>
+                      {(() => {
+                        const orig = Number(p.originalPrice || 0)
+                        const showOrig = Number.isFinite(orig) && orig > pPrice && p.showOriginalPrice !== false
+                        return (
+                          <div className="mt-1 flex items-baseline gap-2">
+                            {showOrig && (
+                              <span className="text-[11px] text-gray-500 line-through">{formatINR(orig)}</span>
+                            )}
+                            <span className="text-xs text-gray-700">{formatINR(pPrice)}</span>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                    <div>
+                      <button
+                        onClick={() => handleWishlistClick(pidStr, p.name)}
+                        aria-label={wished ? 'Remove from wishlist' : 'Add to wishlist'}
+                        aria-pressed={wished}
+                        className={`${wished ? 'text-red-600' : 'text-gray-700'} p-1`}
+                      >
+                        {wished ? (
+                          <HeartIconSolid className="h-4 w-4 text-red-600" />
+                        ) : (
+                          <HeartIconOutline className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )
             })}
@@ -560,7 +675,7 @@ export default function ProductDetail() {
         <div className="w-screen relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] bg-gray-100 py-3 mb-3">
           <h2 className="text-base md:text-lg font-semibold text-center text-gray-900 max-w-7xl mx-auto px-4">Most Viewed</h2>
         </div>
-        <div className="w-screen relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw]">
+        <div className="w-screen relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] px-2">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-0.5">
             {mostViewedProducts.map((p) => {
               const pid = p.id || p._id
@@ -594,7 +709,7 @@ export default function ProductDetail() {
               return (
                 <div
                   key={`most-viewed-${pid}`}
-                  className="group relative"
+                  className="group"
                 >
                   <Link to={`/product/${pid}`} className="block aspect-[4/5] w-full bg-gray-100 overflow-hidden">
                     <img
@@ -603,25 +718,40 @@ export default function ProductDetail() {
                       className="h-full w-full object-cover object-center transition-transform duration-300 group-hover:scale-[1.02]"
                       loading="lazy"
                     />
-                    {/* Bottom-left hover overlay without background */}
-                    <div className="pointer-events-none absolute left-0 right-0 bottom-0 p-3 flex justify-start">
-                      <div className="text-left opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200">
-                        <p className="text-xs font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">{p.name}</p>
-                        <p className="text-xs text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]">{formatINR(pPrice)}</p>
-                      </div>
-                    </div>
                   </Link>
-                  <button
-                    onClick={() => handleWishlistClick(pidStr, p.name)}
-                    aria-label={wished ? 'Remove from wishlist' : 'Add to wishlist'}
-                    className={`absolute top-2 right-2 p-2 rounded-full bg-white/80 backdrop-blur border ${wished ? 'border-red-600 text-red-600' : 'border-gray-300 text-gray-700'} hover:bg-white`}
-                  >
-                    {wished ? (
-                      <HeartIconSolid className="h-4 w-4 text-red-600" />
-                    ) : (
-                      <HeartIconOutline className="h-4 w-4" />
-                    )}
-                  </button>
+
+                  {/* Name, price and wishlist button below the image (same as home page) */}
+                  <div className="mt-2 flex items-center justify-between gap-2 px-2">
+                    <div className="flex-1">
+                      <Link to={`/product/${pid}`} className="text-xs font-medium text-gray-900 line-clamp-2 leading-snug hover:underline">{p.name}</Link>
+                      {(() => {
+                        const orig = Number(p.originalPrice || 0)
+                        const showOrig = Number.isFinite(orig) && orig > pPrice && p.showOriginalPrice !== false
+                        return (
+                          <div className="mt-1 flex items-baseline gap-2">
+                            {showOrig && (
+                              <span className="text-[11px] text-gray-500 line-through">{formatINR(orig)}</span>
+                            )}
+                            <span className="text-xs text-gray-700">{formatINR(pPrice)}</span>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                    <div>
+                      <button
+                        onClick={() => handleWishlistClick(pidStr, p.name)}
+                        aria-label={wished ? 'Remove from wishlist' : 'Add to wishlist'}
+                        aria-pressed={wished}
+                        className={`${wished ? 'text-red-600' : 'text-gray-700'} p-1`}
+                      >
+                        {wished ? (
+                          <HeartIconSolid className="h-4 w-4 text-red-600" />
+                        ) : (
+                          <HeartIconOutline className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )
             })}

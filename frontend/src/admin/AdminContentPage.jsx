@@ -223,7 +223,7 @@ export default function AdminContentPage() {
                         label="Main Headline"
                         value={(content.homepage?.hero?.title) || ''}
                         onChange={(value) => handleContentUpdate('homepage', 'hero.title', value)}
-                        placeholder="Welcome to AUSTINE"
+                        placeholder="Welcome to Austine Lifestyle LLP"
                         help="The main headline displayed on your homepage"
                       />
                       <ContentField

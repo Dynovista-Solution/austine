@@ -2,17 +2,17 @@ import { useEffect } from 'react'
 
 export default function AboutUs() {
   useEffect(() => {
-    document.title = 'Our Story – AustineLifestyle'
+    document.title = 'Our Story – Austine Lifestyle LLP'
   }, [])
 
   return (
     <div className="w-full px-6 sm:px-8 lg:px-10 py-10">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Our Story – AustineLifestyle</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Our Story – Austine Lifestyle LLP</h1>
 
         <div className="mt-6 space-y-4 text-sm text-gray-700 leading-6">
           <p>
-            AustineLifestyle began its journey not as a label, but as a manufacturer.
+            Austine Lifestyle LLP began its journey not as a label, but as a manufacturer.
           </p>
           <p>
             Before becoming a fashion brand, we spent years behind the scenes—understanding materials, mastering
@@ -25,16 +25,16 @@ export default function AboutUs() {
           </p>
           <p>
             As our manufacturing expertise grew, so did our vision—to create a brand that delivers factory-level
-            quality directly to customers, without compromises. That’s how AustineLifestyle was born: a footwear
+            quality directly to customers, without compromises. That’s how Austine Lifestyle LLP was born: a footwear
             fashion brand built on technical knowledge, precision, and real-world experience.
           </p>
           <p>
-            Every pair of AustineLifestyle footwear reflects our manufacturing roots—from material selection and
+            Every pair of Austine Lifestyle LLP footwear reflects our manufacturing roots—from material selection and
             durability testing to comfort engineering and finishing details. Because we understand footwear from
             the inside out, we design with purpose, not shortcuts.
           </p>
           <p>
-            Today, AustineLifestyle blends manufacturing excellence with modern fashion, offering footwear that’s
+            Today, Austine Lifestyle LLP blends manufacturing excellence with modern fashion, offering footwear that’s
             stylish, comfortable, and dependable for everyday life.
           </p>
           <p className="font-semibold text-gray-900">
