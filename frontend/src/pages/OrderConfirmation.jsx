@@ -67,7 +67,7 @@ export default function OrderConfirmation() {
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 py-16 min-h-[60vh]">
-      <div className="max-w-2xl mx-auto">\n        {/* Success Icon and Message */}
+      <div className="max-w-2xl mx-auto">        {/* Success Icon and Message */}
         <div className="flex flex-col items-center text-center mb-8">
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
             <CheckCircleIcon className="w-10 h-10 text-green-600" />

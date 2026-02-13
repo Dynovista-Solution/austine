@@ -15,7 +15,6 @@ export default function Header() {
   const [searchTopOffset, setSearchTopOffset] = useState(0)
   const [activeMegaCategory, setActiveMegaCategory] = useState(null)
   const [activeMegaTranslateX, setActiveMegaTranslateX] = useState(0)
-  const [megaLockedClosed, setMegaLockedClosed] = useState(false)
   const { items } = useCart()
   const { ids: wishlistIds } = useWishlist()
   const { content } = useContent()
@@ -58,10 +57,22 @@ export default function Header() {
 
   const openSearch = () => setSearchOpen(true)
 
+  useEffect(() => {
+    if (!activeMegaCategory) return
+
+    const onPointerDown = () => {
+      setActiveMegaCategory(null)
+      setActiveMegaTranslateX(0)
+    }
+
+    // Close the mega menu on any click/tap anywhere.
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => window.removeEventListener('pointerdown', onPointerDown)
+  }, [activeMegaCategory])
+
   const closeMegaOnClick = () => {
-    // Using pure CSS hover means the dropdown can stay visible while the cursor
-    // is still over the nav area during navigation. Lock it closed on click.
-    setMegaLockedClosed(true)
+    setActiveMegaCategory(null)
+    setActiveMegaTranslateX(0)
   }
 
   const handleMegaEnter = (event, categoryName) => {
@@ -93,11 +104,10 @@ export default function Header() {
   const handleMegaLeave = () => {
     setActiveMegaCategory(null)
     setActiveMegaTranslateX(0)
-    setMegaLockedClosed(false)
   }
 
   return (
-    <header ref={headerRef} className="sticky top-0 z-50">
+    <header ref={headerRef} className="sticky top-0 z-50" onMouseLeave={handleMegaLeave}>
       {/* Top promo bar */}
       {content.homepage.topBanner?.enabled && (
         <div className="w-full bg-black text-white text-xs md:text-sm py-2 text-center">
@@ -198,7 +208,6 @@ export default function Header() {
                     key={category.name}
                     className="group"
                     onMouseEnter={(e) => handleMegaEnter(e, category.name)}
-                    onMouseLeave={handleMegaLeave}
                   >
                     <Link
                       data-nav-link
@@ -211,9 +220,9 @@ export default function Header() {
                     {/* Full-width mega menu */}
                     <div
                       className={
-                        megaLockedClosed
-                          ? 'pointer-events-none opacity-0 invisible'
-                          : 'pointer-events-none opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200'
+                        activeMegaCategory === category.name
+                          ? 'opacity-100 visible transition-all duration-200'
+                          : 'pointer-events-none opacity-0 invisible transition-all duration-200'
                       }
                     >
                       <div className="absolute left-0 right-0 top-full w-full z-50 overflow-x-hidden">
@@ -235,9 +244,12 @@ export default function Header() {
                                       key={subcategory}
                                       to={`/category/${encodeURIComponent(category.name)}?sub=${encodeURIComponent(subcategory)}`}
                                       onClick={closeMegaOnClick}
-                                      className="block px-3 py-2 text-sm text-gray-800 hover:bg-gray-50 rounded-sm"
+                                      className="block px-3 py-2 text-sm text-gray-800 no-underline"
+                                      style={{ textDecoration: 'none' }}
                                     >
-                                      {subcategory}
+                                      <span className="relative inline-block after:content-[''] after:absolute after:left-0 after:-bottom-0.5 after:h-[1px] after:w-full after:bg-current after:origin-left after:scale-x-0 after:transition-transform after:duration-500 after:ease-out hover:after:scale-x-100">
+                                        {subcategory}
+                                      </span>
                                     </Link>
                                   ))}
                                 </div>
@@ -394,10 +406,13 @@ export default function Header() {
                             <Link
                               key={subcategory}
                               to={`/category/${encodeURIComponent(category.name)}?sub=${encodeURIComponent(subcategory)}`}
-                              className="block py-1 text-sm text-gray-600 hover:text-gray-900"
+                              className="block py-1 text-sm text-gray-600 hover:text-gray-900 no-underline"
+                              style={{ textDecoration: 'none' }}
                               onClick={() => setMobileOpen(false)}
                             >
-                              {subcategory}
+                              <span className="relative inline-block after:content-[''] after:absolute after:left-0 after:-bottom-0.5 after:h-[1px] after:w-full after:bg-current after:origin-left after:scale-x-0 after:transition-transform after:duration-500 after:ease-out hover:after:scale-x-100">
+                                {subcategory}
+                              </span>
                             </Link>
                           ))}
                         </div>

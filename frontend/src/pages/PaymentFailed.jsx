@@ -17,6 +17,10 @@ export default function PaymentFailed() {
         <p className="text-gray-600 mb-2">
           We're sorry, but your payment could not be processed.
         </p>
+
+        <p className="text-sm text-gray-600 mb-6">
+          Your order is only confirmed after successful payment. Since this payment did not complete, the order was not placed.
+        </p>
         
         {txnid && (
           <p className="text-sm text-gray-500 mb-8">

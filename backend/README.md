@@ -176,6 +176,31 @@ backend/
 | `MAX_FILE_SIZE` | Maximum file upload size | 5242880 (5MB) |
 | `ALLOWED_FILE_TYPES` | Comma-separated allowed MIME types | image/jpeg,image/png,image/gif,image/webp |
 
+### PayU
+
+PayU requires different endpoints/credentials for **test** vs **live**.
+
+Important: this backend uses `PAYU_ENV` (not `NODE_ENV`) to choose PayU test/live URLs, so deploying your backend with `NODE_ENV=production` won’t accidentally switch you to live.
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `PAYU_ENV` | `test` or `live` | test |
+| `PAYU_MERCHANT_KEY` | PayU merchant key (depends on env) | xxxx |
+| `PAYU_MERCHANT_SALT` | PayU merchant salt (depends on env) | xxxx |
+| `PAYU_PAYMENT_URL` | Optional override for payment URL | https://test.payu.in/_payment |
+
+### Mailgun (Email Notifications)
+
+Set these to enable emails on user registration and order events.
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `MAILGUN_API_KEY` | Mailgun private API key | key-xxxx |
+| `MAILGUN_DOMAIN` | Mailgun sending domain | mg.yourdomain.com |
+| `MAIL_FROM` | Default From address | `AUSTINE <no-reply@mg.yourdomain.com>` |
+| `STORE_OWNER_EMAIL` | Store owner/admin email to notify | owner@yourdomain.com |
+| `STORE_NAME` | Store name used in subjects/body | AUSTINE |
+
 ## Next Steps
 
 1. **Install MongoDB**: Set up MongoDB database

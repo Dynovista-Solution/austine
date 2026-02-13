@@ -3,11 +3,140 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 const { body, query, validationResult } = require('express-validator');
 const Order = require('../models/Order');
+const PayUPaymentAttempt = require('../models/PayUPaymentAttempt');
 const Product = require('../models/Product');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 const payuConfig = require('../config/payu');
+const { getDefaults, sendMail } = require('../utils/mailer');
 
 const router = express.Router();
+
+// @route   GET /api/orders/payu/config
+// @desc    Check whether PayU is configured (safe: does not expose secrets)
+// @access  Public
+router.get('/payu/config', (req, res) => {
+  const configured = Boolean(payuConfig.merchantKey && payuConfig.merchantSalt && payuConfig.paymentUrl);
+  return res.json({
+    success: true,
+    data: {
+      configured,
+      isLive: Boolean(payuConfig.isLive),
+      paymentUrl: payuConfig.paymentUrl || null
+    }
+  });
+});
+
+function assertPayUConfigured() {
+  if (!payuConfig.merchantKey || !payuConfig.merchantSalt) {
+    const err = new Error('PayU is not configured. Set PAYU_MERCHANT_KEY and PAYU_MERCHANT_SALT (and optionally PAYU_ENV=live/test).');
+    err.statusCode = 500;
+    throw err;
+  }
+  if (!payuConfig.paymentUrl) {
+    const err = new Error('PayU payment URL is missing. Set PAYU_PAYMENT_URL or PAYU_ENV.');
+    err.statusCode = 500;
+    throw err;
+  }
+}
+
+async function buildOrderSnapshotsAndTotals(items) {
+  const enrichedItems = [];
+  let subtotal = 0;
+
+  for (const item of items) {
+    const product = await (Product.findByPk ? Product.findByPk(item.product) : Product.findById(item.product));
+    if (!product) {
+      const err = new Error(`Product not found: ${item.product}`);
+      err.statusCode = 400;
+      throw err;
+    }
+    if (product.isActive === false) {
+      const err = new Error(`Product is inactive: ${product.name}`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const price = Number(product.price);
+    const quantity = Number(item.quantity);
+
+    let image = '';
+    const selectedColor = item.color || item.variantLabel || '';
+
+    if (product.colorImages) {
+      if (selectedColor) {
+        const colorMedia = typeof product.colorImages.get === 'function'
+          ? product.colorImages.get(selectedColor)
+          : product.colorImages[selectedColor];
+
+        if (Array.isArray(colorMedia) && colorMedia.length > 0) {
+          const firstImage = colorMedia.find(m => !m.type || m.type === 'image');
+          if (firstImage?.url) image = firstImage.url;
+        }
+      }
+
+      if (!image) {
+        const colorKeys = typeof product.colorImages.keys === 'function'
+          ? Array.from(product.colorImages.keys())
+          : Object.keys(product.colorImages);
+
+        for (const color of colorKeys) {
+          const colorMedia = typeof product.colorImages.get === 'function'
+            ? product.colorImages.get(color)
+            : product.colorImages[color];
+
+          if (Array.isArray(colorMedia) && colorMedia.length > 0) {
+            const firstImage = colorMedia.find(m => !m.type || m.type === 'image');
+            if (firstImage?.url) {
+              image = firstImage.url;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (!image) {
+      image = product.images?.[0]?.url || product.image || '';
+    }
+
+    const snapshot = {
+      product: product.id || product._id,
+      name: product.name,
+      sku: product.sku || '',
+      image,
+      price,
+      quantity,
+      size: item.size || '',
+      color: item.color || item.variantLabel || '',
+      subtotal: Number((price * quantity).toFixed(2))
+    };
+
+    subtotal += snapshot.subtotal;
+    enrichedItems.push(snapshot);
+  }
+
+  const tax = Number((subtotal * (5 / 105)).toFixed(2));
+  const shipping = 0;
+  const total = Number(subtotal.toFixed(2));
+
+  return { enrichedItems, subtotal, tax, shipping, total };
+}
+
+async function generateUniqueTxnId() {
+  // Generate order-number-like txnid so we can reuse it as orderNumber on success.
+  for (let i = 0; i < 5; i++) {
+    const timestamp = Date.now().toString().slice(-6);
+    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    const txnid = `ORD${timestamp}${random}`;
+    const [existingOrder, existingAttempt] = await Promise.all([
+      Order.findOne({ orderNumber: txnid }).select('_id').lean(),
+      PayUPaymentAttempt.findOne({ txnid }).select('_id').lean()
+    ]);
+    if (!existingOrder && !existingAttempt) return txnid;
+  }
+  // Fallback if extremely unlucky
+  return `ORD${Date.now()}${Math.floor(Math.random() * 100000)}`;
+}
 
 // @route   POST /api/orders
 // @desc    Create a new order (requires login)
@@ -36,87 +165,15 @@ router.post('/', [
 
     const { items, shippingAddress, billingAddress = null, payment } = req.body;
 
-    // Validate and enrich items with product snapshots
-    const enrichedItems = [];
-    let subtotal = 0;
-    for (const item of items) {
-      const product = await (Product.findByPk ? Product.findByPk(item.product) : Product.findById(item.product));
-      if (!product) {
-        return res.status(400).json({ success: false, message: `Product not found: ${item.product}` });
-      }
-      if (product.isActive === false) {
-        return res.status(400).json({ success: false, message: `Product is inactive: ${product.name}` });
-      }
-      const price = Number(product.price);
-      const quantity = Number(item.quantity);
-      
-      // Get product image - check colorImages first, then fallback to images array
-      let image = '';
-      const selectedColor = item.color || item.variantLabel || '';
-      
-      // Handle colorImages as Mongoose Map or plain object
-      if (product.colorImages) {
-        // Try to get color-specific image first
-        if (selectedColor) {
-          const colorMedia = typeof product.colorImages.get === 'function' 
-            ? product.colorImages.get(selectedColor) 
-            : product.colorImages[selectedColor];
-          
-          if (Array.isArray(colorMedia) && colorMedia.length > 0) {
-            const firstImage = colorMedia.find(m => !m.type || m.type === 'image');
-            if (firstImage?.url) image = firstImage.url;
-          }
-        }
-        
-        // If no color-specific image, get any available image
-        if (!image) {
-          const colorKeys = typeof product.colorImages.keys === 'function'
-            ? Array.from(product.colorImages.keys())
-            : Object.keys(product.colorImages);
-          
-          for (const color of colorKeys) {
-            const colorMedia = typeof product.colorImages.get === 'function'
-              ? product.colorImages.get(color)
-              : product.colorImages[color];
-            
-            if (Array.isArray(colorMedia) && colorMedia.length > 0) {
-              const firstImage = colorMedia.find(m => !m.type || m.type === 'image');
-              if (firstImage?.url) {
-                image = firstImage.url;
-                break;
-              }
-            }
-          }
-        }
-      }
-      
-      // Fallback to old images array structure
-      if (!image) {
-        image = product.images?.[0]?.url || product.image || '';
-      }
-      
-      const snapshot = {
-        product: product.id || product._id,
-        name: product.name,
-        sku: product.sku || '',
-        image,
-        price,
-        quantity,
-        size: item.size || '',
-        color: item.color || item.variantLabel || '',
-        subtotal: Number((price * quantity).toFixed(2))
-      };
-      subtotal += snapshot.subtotal;
-      enrichedItems.push(snapshot);
+    // IMPORTANT: For PayU we only create the Order after payment success.
+    if (payment?.method === 'payu') {
+      return res.status(400).json({
+        success: false,
+        message: 'PayU orders are created only after successful payment. Use /api/orders/payu/initiate.'
+      });
     }
 
-    // Tax is already included in product price (5% of final price)
-    // Extract tax: if price includes 5% tax, then tax = subtotal * (5/105)
-    const tax = Number((subtotal * (5 / 105)).toFixed(2));
-    // Shipping is included in product price
-    const shipping = 0;
-    // Total equals subtotal since tax is already included
-    const total = Number(subtotal.toFixed(2));
+    const { enrichedItems, subtotal, tax, shipping, total } = await buildOrderSnapshotsAndTotals(items);
 
     const orderData = {
       user: req.user.id || req.user._id,
@@ -130,10 +187,55 @@ router.post('/', [
       shippingAddress,
       billingAddress: billingAddress || shippingAddress,
       status: 'pending',
-      statusHistory: [{ status: 'pending', note: 'Order created', updatedBy: req.user.id }]
+      statusHistory: [{
+        status: 'pending',
+        note: payment.method === 'payu' ? 'Checkout started (PayU payment pending)' : 'Order created',
+        updatedBy: req.user.id
+      }]
     };
     
     const order = await Order.create(orderData);
+
+    // Fire-and-forget emails (do not block order creation)
+    try {
+      const { storeName, ownerEmail, frontendUrl } = getDefaults();
+      const customerEmail = order?.shippingAddress?.email;
+      const orderNumber = order?.orderNumber || String(order?._id || '');
+      const itemsText = Array.isArray(order?.items)
+        ? order.items.map(i => `- ${i.name} x${i.quantity} (${i.price})`).join('\n')
+        : '';
+
+      setImmediate(() => {
+        const tasks = [];
+
+        if (customerEmail) {
+          tasks.push(sendMail({
+            to: customerEmail,
+            subject: `Order received: ${orderNumber}`,
+            text: `Thanks for your order!\n\nOrder: ${orderNumber}\nTotal: ${order.total}\n\nItems:\n${itemsText}\n\nTrack your order: ${frontendUrl}/orders\n\n${storeName}`,
+            html: `<p>Thanks for your order!</p><p><b>Order:</b> ${orderNumber}<br/><b>Total:</b> ${order.total}</p><p><b>Items:</b><br/>${(Array.isArray(order?.items) ? order.items.map(i => `${i.name} x${i.quantity}`).join('<br/>') : '')}</p><p>Track your order: <a href="${frontendUrl}/orders">${frontendUrl}/orders</a></p><p>${storeName}</p>`
+          }));
+        }
+
+        if (ownerEmail) {
+          tasks.push(sendMail({
+            to: ownerEmail,
+            subject: `New order: ${orderNumber}`,
+            text: `A new order was placed.\n\nOrder: ${orderNumber}\nCustomer: ${order?.shippingAddress?.firstName || ''} ${order?.shippingAddress?.lastName || ''}\nEmail: ${customerEmail || '(missing)'}\nTotal: ${order.total}\n\nItems:\n${itemsText}`,
+            html: `<p>A new order was placed.</p><ul><li><b>Order:</b> ${orderNumber}</li><li><b>Customer:</b> ${(order?.shippingAddress?.firstName || '')} ${(order?.shippingAddress?.lastName || '')}</li><li><b>Email:</b> ${customerEmail || '(missing)'}</li><li><b>Total:</b> ${order.total}</li></ul><p><b>Items:</b><br/>${(Array.isArray(order?.items) ? order.items.map(i => `${i.name} x${i.quantity}`).join('<br/>') : '')}</p>`
+          }));
+        }
+
+        Promise.allSettled(tasks).then((results) => {
+          const failures = results.filter(r => r.status === 'rejected');
+          if (failures.length > 0) {
+            console.warn('Order email failed:', failures.map(f => f.reason?.message || String(f.reason)));
+          }
+        }).catch(() => {});
+      });
+    } catch (e) {
+      console.warn('Order email scheduling failed:', e?.message || e);
+    }
 
     res.status(201).json({ success: true, message: 'Order created', data: { order } });
   } catch (error) {
@@ -147,6 +249,78 @@ router.post('/', [
       message: 'Failed to create order',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
+  }
+});
+
+// @route   POST /api/orders/payu/initiate
+// @desc    Start PayU checkout (creates a temporary payment attempt; NO Order is created yet)
+// @access  Private
+router.post('/payu/initiate', [
+  authenticate,
+  body('items').isArray({ min: 1 }),
+  body('items.*.product').notEmpty(),
+  body('items.*.quantity').isInt({ min: 1 }),
+  body('shippingAddress.firstName').notEmpty(),
+  body('shippingAddress.lastName').notEmpty(),
+  body('shippingAddress.email').isEmail(),
+  body('shippingAddress.phone').notEmpty(),
+  body('shippingAddress.street').notEmpty(),
+  body('shippingAddress.city').notEmpty(),
+  body('shippingAddress.state').optional().isString(),
+  body('shippingAddress.zipCode').notEmpty(),
+  body('shippingAddress.country').notEmpty()
+], async (req, res) => {
+  try {
+    assertPayUConfigured();
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, message: 'Validation errors', errors: errors.array() });
+    }
+
+    const { items, shippingAddress, billingAddress = null } = req.body;
+
+    const { enrichedItems, subtotal, tax, shipping, total } = await buildOrderSnapshotsAndTotals(items);
+
+    const txnid = await generateUniqueTxnId();
+    const amount = Number(total).toFixed(2);
+    const productinfo = 'Order Payment';
+    const firstname = shippingAddress.firstName;
+    const email = shippingAddress.email;
+
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await PayUPaymentAttempt.create({
+      txnid,
+      user: req.user.id || req.user._id,
+      items: enrichedItems,
+      subtotal,
+      tax,
+      shipping,
+      total,
+      shippingAddress,
+      billingAddress: billingAddress || shippingAddress,
+      expiresAt
+    });
+
+    const hashString = `${payuConfig.merchantKey}|${txnid}|${amount}|${productinfo}|${firstname}|${email}|||||||||||${payuConfig.merchantSalt}`;
+    const hash = crypto.createHash('sha512').update(hashString).digest('hex');
+
+    return res.json({
+      success: true,
+      data: {
+        txnid,
+        amount,
+        productinfo,
+        firstname,
+        email,
+        key: payuConfig.merchantKey,
+        hash,
+        paymentUrl: payuConfig.paymentUrl
+      }
+    });
+  } catch (error) {
+    console.error('PayU initiate error:', error);
+    const statusCode = error.statusCode || 500;
+    res.status(statusCode).json({ success: false, message: error.message || 'Failed to initiate PayU payment' });
   }
 });
 
@@ -369,6 +543,7 @@ router.put('/:id/status', [
 // @access  Private
 router.post('/payment/hash', authenticate, async (req, res) => {
   try {
+    assertPayUConfigured();
     const { txnid, amount, productinfo, firstname, email } = req.body;
     
     if (!txnid || !amount || !productinfo || !firstname || !email) {
@@ -396,24 +571,120 @@ router.post('/payment/hash', authenticate, async (req, res) => {
 router.post('/payment/success', async (req, res) => {
   try {
     const { txnid, status, amount, productinfo, firstname, email, mihpayid, hash } = req.body;
+
+    if (!payuConfig.merchantKey || !payuConfig.merchantSalt) {
+      console.error('PayU callback received but PAYU_MERCHANT_KEY/SALT not configured');
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed?txnid=${txnid || ''}`);
+    }
     
     // Verify hash for security
     const verifyHashString = `${payuConfig.merchantSalt}|${status}|||||||||||${email}|${firstname}|${productinfo}|${amount}|${txnid}|${payuConfig.merchantKey}`;
     const verifyHash = crypto.createHash('sha512').update(verifyHashString).digest('hex');
     
     if (hash === verifyHash && status === 'success') {
-      // Update order payment status
-      const order = await Order.findOne({ orderNumber: txnid });
+      // Idempotency: if order already exists, just ensure it is marked paid.
+      let order = await Order.findOne({ orderNumber: txnid });
       if (order) {
+        order.payment = order.payment || { method: 'payu', status: 'pending' };
+        order.payment.method = 'payu';
         order.payment.status = 'paid';
         order.payment.transactionId = mihpayid;
         order.payment.paidAt = new Date();
         await order.save();
+
+        // Fire-and-forget emails (do not block redirect)
+        try {
+          const { storeName, ownerEmail, frontendUrl } = getDefaults();
+          const customerEmail = order?.shippingAddress?.email;
+          const orderNumber = order?.orderNumber || txnid;
+          const itemsText = Array.isArray(order?.items)
+            ? order.items.map(i => `- ${i.name} x${i.quantity} (${i.price})`).join('\n')
+            : '';
+
+          setImmediate(() => {
+            const tasks = [];
+            if (customerEmail) {
+              tasks.push(sendMail({
+                to: customerEmail,
+                subject: `Payment received: ${orderNumber}`,
+                text: `Your payment was successful.\n\nOrder: ${orderNumber}\nTotal: ${order.total}\n\nItems:\n${itemsText}\n\nTrack your order: ${frontendUrl}/orders\n\n${storeName}`
+              }));
+            }
+            if (ownerEmail) {
+              tasks.push(sendMail({
+                to: ownerEmail,
+                subject: `PayU payment received: ${orderNumber}`,
+                text: `Payment received for order ${orderNumber}.\nCustomer: ${order?.shippingAddress?.firstName || ''} ${order?.shippingAddress?.lastName || ''}\nEmail: ${customerEmail || '(missing)'}\nTotal: ${order.total}\n\nItems:\n${itemsText}`
+              }));
+            }
+            Promise.allSettled(tasks).catch(() => {});
+          });
+        } catch (e) {
+          console.warn('PayU email scheduling failed:', e?.message || e);
+        }
+
+        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/order-confirmation/${txnid}?success=true`);
       }
-      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/order-confirmation/${txnid}?success=true`);
-    } else {
-      res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed?txnid=${txnid}`);
+
+      const attempt = await PayUPaymentAttempt.findOne({ txnid });
+      if (!attempt) {
+        return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed?txnid=${txnid}`);
+      }
+
+      order = await Order.create({
+        orderNumber: txnid,
+        user: attempt.user,
+        items: attempt.items,
+        subtotal: attempt.subtotal,
+        tax: attempt.tax,
+        shipping: attempt.shipping,
+        total: attempt.total,
+        payment: { method: 'payu', status: 'paid', transactionId: mihpayid, paidAt: new Date() },
+        shippingAddress: attempt.shippingAddress,
+        billingAddress: attempt.billingAddress,
+        status: 'pending',
+        statusHistory: [{ status: 'pending', note: 'Payment successful (PayU)', updatedBy: null }]
+      });
+
+      await PayUPaymentAttempt.deleteOne({ _id: attempt._id });
+
+      // Fire-and-forget emails (do not block redirect)
+      try {
+        const { storeName, ownerEmail, frontendUrl } = getDefaults();
+        const customerEmail = order?.shippingAddress?.email || email;
+        const orderNumber = order?.orderNumber || txnid;
+        const itemsText = Array.isArray(order?.items)
+          ? order.items.map(i => `- ${i.name} x${i.quantity} (${i.price})`).join('\n')
+          : '';
+
+        setImmediate(() => {
+          const tasks = [];
+          if (customerEmail) {
+            tasks.push(sendMail({
+              to: customerEmail,
+              subject: `Order confirmed: ${orderNumber}`,
+              text: `Thanks for your order! Payment was successful.\n\nOrder: ${orderNumber}\nTotal: ${order.total}\n\nItems:\n${itemsText}\n\nTrack your order: ${frontendUrl}/orders\n\n${storeName}`
+            }));
+          }
+          if (ownerEmail) {
+            tasks.push(sendMail({
+              to: ownerEmail,
+              subject: `New paid order (PayU): ${orderNumber}`,
+              text: `A PayU order was paid.\n\nOrder: ${orderNumber}\nCustomer: ${order?.shippingAddress?.firstName || ''} ${order?.shippingAddress?.lastName || ''}\nEmail: ${customerEmail || '(missing)'}\nTotal: ${order.total}\n\nItems:\n${itemsText}`
+            }));
+          }
+          Promise.allSettled(tasks).catch(() => {});
+        });
+      } catch (e) {
+        console.warn('PayU email scheduling failed:', e?.message || e);
+      }
+
+      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/order-confirmation/${txnid}?success=true`);
     }
+
+    // Hash mismatch or non-success status
+    try { await PayUPaymentAttempt.deleteOne({ txnid }); } catch {}
+    return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed?txnid=${txnid}`);
   } catch (error) {
     console.error('Payment success callback error:', error);
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed`);
@@ -426,11 +697,20 @@ router.post('/payment/success', async (req, res) => {
 router.post('/payment/failure', async (req, res) => {
   try {
     const { txnid } = req.body;
+    // If an order exists (rare with the new flow), mark it failed/cancelled.
     const order = await Order.findOne({ orderNumber: txnid });
     if (order) {
+      order.payment = order.payment || { method: 'payu', status: 'pending' };
+      order.payment.method = 'payu';
       order.payment.status = 'failed';
+      order.status = 'cancelled';
+      order.statusHistory = order.statusHistory || [];
+      order.statusHistory.push({ status: 'cancelled', note: 'Payment failed/cancelled (PayU)', updatedBy: null });
       await order.save();
     }
+
+    // Always delete the attempt so no ghost "pending" attempts remain.
+    await PayUPaymentAttempt.deleteOne({ txnid });
     res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/payment-failed?txnid=${txnid}`);
   } catch (error) {
     console.error('Payment failure callback error:', error);

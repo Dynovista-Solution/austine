@@ -153,6 +153,11 @@ class ApiService {
     return this.post('/auth/change-password', passwordData);
   }
 
+  // Contact / Support
+  async sendContactMessage(payload) {
+    return this.post('/contact', payload);
+  }
+
   logout() {
     // Only remove user auth token, not admin session
     localStorage.removeItem('authToken');

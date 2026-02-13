@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const { authenticate, generateToken } = require('../middleware/auth');
+const { getDefaults, sendMail } = require('../utils/mailer');
 
 const router = express.Router();
 
@@ -159,6 +160,47 @@ router.post('/register', [
 
     // Generate token
     const token = generateToken(user.id);
+
+    // Fire-and-forget emails (do not block registration)
+    try {
+      const { storeName, ownerEmail, frontendUrl } = getDefaults();
+      const safeName = user.name || 'there';
+      const userEmail = user.email;
+      const createdAt = new Date().toISOString();
+
+      setImmediate(() => {
+        const tasks = [];
+
+        // Welcome email to user
+        if (userEmail) {
+          tasks.push(sendMail({
+            to: userEmail,
+            subject: `Welcome to ${storeName}`,
+            text: `Hi ${safeName},\n\nYour account has been created successfully.\n\nYou can sign in here: ${frontendUrl}/login\n\nThanks,\n${storeName}`,
+            html: `<p>Hi ${safeName},</p><p>Your account has been created successfully.</p><p>You can sign in here: <a href="${frontendUrl}/login">${frontendUrl}/login</a></p><p>Thanks,<br/>${storeName}</p>`
+          }));
+        }
+
+        // Notify store owner
+        if (ownerEmail) {
+          tasks.push(sendMail({
+            to: ownerEmail,
+            subject: `New account created: ${safeName}`,
+            text: `A new customer account was created.\n\nName: ${safeName}\nEmail: ${userEmail || '(missing)'}\nTime: ${createdAt}`,
+            html: `<p>A new customer account was created.</p><ul><li><b>Name:</b> ${safeName}</li><li><b>Email:</b> ${userEmail || '(missing)'}</li><li><b>Time:</b> ${createdAt}</li></ul>`
+          }));
+        }
+
+        Promise.allSettled(tasks).then((results) => {
+          const failures = results.filter(r => r.status === 'rejected');
+          if (failures.length > 0) {
+            console.warn('Registration email failed:', failures.map(f => f.reason?.message || String(f.reason)));
+          }
+        }).catch(() => {});
+      });
+    } catch (e) {
+      console.warn('Registration email scheduling failed:', e?.message || e);
+    }
 
     res.status(201).json({
       success: true,

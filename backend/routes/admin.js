@@ -3,8 +3,48 @@ const Order = require('../models/Order');
 const Product = require('../models/Product');
 const User = require('../models/User');
 const { authenticate, requireAdmin } = require('../middleware/auth');
+const { sendMail, getDefaults } = require('../utils/mailer');
 
 const router = express.Router();
+
+// @route   POST /api/admin/test-email
+// @desc    Send a test email (verifies Mailgun/SMTP configuration)
+// @access  Private (Admin)
+router.post('/test-email', [authenticate, requireAdmin], async (req, res) => {
+  try {
+    const { ownerEmail, storeName } = getDefaults();
+    const to = String(req.body?.to || ownerEmail || '').trim();
+    if (!to) {
+      return res.status(400).json({
+        success: false,
+        message: 'No recipient specified. Provide { to } or set STORE_OWNER_EMAIL.'
+      });
+    }
+
+    const result = await sendMail({
+      to,
+      subject: `Test email from ${storeName}`,
+      text: `If you received this, your email provider is configured correctly.\n\nTime: ${new Date().toISOString()}`
+    });
+
+    return res.json({
+      success: true,
+      message: result?.skipped ? 'Email skipped (provider disabled/unconfigured)' : 'Email sent',
+      data: {
+        skipped: Boolean(result?.skipped),
+        provider: result?.provider,
+        to
+      }
+    });
+  } catch (error) {
+    console.error('Test email error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to send test email',
+      error: process.env.NODE_ENV === 'development' ? (error?.message || String(error)) : undefined
+    });
+  }
+});
 
 // @route   GET /api/admin/stats
 // @desc    Basic admin dashboard stats

@@ -27,6 +27,27 @@ export default function CheckoutPage() {
   })
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
+  const [payuStatus, setPayuStatus] = useState({ loading: true, configured: true, message: '' })
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const res = await apiService.get('/orders/payu/config')
+        const configured = Boolean(res?.data?.configured)
+        if (!alive) return
+        setPayuStatus({ loading: false, configured, message: configured ? '' : 'Online payment is temporarily unavailable. Please use Cash on Delivery.' })
+        if (!configured) {
+          setForm(f => ({ ...f, paymentMethod: 'cod' }))
+        }
+      } catch {
+        if (!alive) return
+        // If the check fails, keep PayU option but let submit show the backend error.
+        setPayuStatus({ loading: false, configured: true, message: '' })
+      }
+    })()
+    return () => { alive = false }
+  }, [])
 
   function updateField(e) {
     const { name, value } = e.target
@@ -74,59 +95,59 @@ export default function CheckoutPage() {
         shippingAddress,
         payment: { method: form.paymentMethod }
       }
+
+      if (form.paymentMethod === 'payu') {
+        // IMPORTANT: Do NOT create an order here.
+        // We only create an order after PayU returns success.
+        const initRes = await apiService.post('/orders/payu/initiate', payload)
+        const init = initRes?.data
+        if (!initRes?.success || !init?.txnid) {
+          throw new Error(initRes?.message || 'Failed to initiate PayU payment')
+        }
+        await submitPayUForm(init)
+        return
+      }
+
+      // COD (or other non-PayU methods)
       const res = await apiService.post('/orders', payload)
       const order = res?.data?.order || res?.data
-      
-      // If PayU payment selected, initiate PayU payment
-      if (form.paymentMethod === 'payu') {
-        await initiatePayUPayment(order)
-      } else {
-        // For COD, navigate to confirmation (cart will clear there)
-        const orderNumber = order.orderNumber || order._id
-        navigate(`/order-confirmation/${orderNumber}`, { state: { order } })
-      }
+      const orderNumber = order.orderNumber || order._id
+      navigate(`/order-confirmation/${orderNumber}`, { state: { order } })
     } catch (err) {
       console.error('Order creation error:', err)
-      alert('Failed to create order. Please try again.')
+      alert(err?.message || 'Failed to create order. Please try again.')
       setSubmitting(false)
     }
   }
 
-  async function initiatePayUPayment(order) {
+  async function submitPayUForm(init) {
     try {
-      const txnid = order.orderNumber || order._id
-      const amount = order.total.toFixed(2)
-      const productinfo = 'Order Payment'
-      const firstname = form.firstName
-      const email = form.email
-      
-      // Get hash from backend
-      const hashRes = await apiService.post('/orders/payment/hash', {
-        txnid,
-        amount,
-        productinfo,
-        firstname,
-        email
-      })
-      
-      if (!hashRes.success) throw new Error('Hash generation failed')
+      const txnid = init.txnid
+      const amount = init.amount
+      const productinfo = init.productinfo || 'Order Payment'
+      const firstname = init.firstname
+      const email = init.email
+
+      // PayU callbacks must hit your BACKEND (publicly reachable), not the frontend.
+      const apiBase = String(apiService?.baseURL || '/api').replace(/\/+$/, '')
+      const callbackBase = apiBase.startsWith('http') ? apiBase : `${window.location.origin}${apiBase}`
       
       // Create PayU form and submit
       const payuForm = document.createElement('form')
       payuForm.setAttribute('method', 'POST')
-      payuForm.setAttribute('action', hashRes.paymentUrl)
+      payuForm.setAttribute('action', init.paymentUrl)
       
       const params = {
-        key: hashRes.key,
+        key: init.key,
         txnid,
         amount,
         productinfo,
         firstname,
         email,
         phone: form.phone,
-        surl: `${window.location.origin}/api/orders/payment/success`,
-        furl: `${window.location.origin}/api/orders/payment/failure`,
-        hash: hashRes.hash
+        surl: `${callbackBase}/orders/payment/success`,
+        furl: `${callbackBase}/orders/payment/failure`,
+        hash: init.hash
       }
       
       Object.keys(params).forEach(key => {
@@ -216,6 +237,11 @@ export default function CheckoutPage() {
 
           <section>
             <h2 className="text-sm font-semibold text-gray-900 mb-4">Payment Method</h2>
+            {!payuStatus.loading && payuStatus.message ? (
+              <div className="mb-4 rounded-md border border-yellow-200 bg-yellow-50 px-4 py-3 text-xs text-yellow-900">
+                {payuStatus.message}
+              </div>
+            ) : null}
             <div className="space-y-3">
               <label className="flex items-center gap-3 p-4 border border-gray-300 rounded-md cursor-pointer hover:border-gray-400">
                 <input
@@ -224,6 +250,7 @@ export default function CheckoutPage() {
                   value="payu"
                   checked={form.paymentMethod === 'payu'}
                   onChange={updateField}
+                  disabled={!payuStatus.loading && !payuStatus.configured}
                   className="w-4 h-4 text-blue-600"
                 />
                 <div className="flex-1">

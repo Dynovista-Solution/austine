@@ -217,7 +217,13 @@ orderSchema.statics.getByStatus = function(status, limit = 50) {
 
 // Static method to get user's orders
 orderSchema.statics.getUserOrders = function(userId, limit = 20) {
-  return this.find({ user: userId })
+  return this.find({
+      user: userId,
+      $or: [
+        { 'payment.method': { $ne: 'payu' } },
+        { 'payment.method': 'payu', 'payment.status': 'paid' }
+      ]
+    })
     .sort({ createdAt: -1 })
     .limit(limit);
 };

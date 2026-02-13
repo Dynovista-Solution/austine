@@ -7,6 +7,7 @@ const dotenv = require('dotenv');
 const path = require('path');
 const { connectDB } = require('./config/database');
 const fs = require('fs');
+const payuConfig = require('./config/payu');
 
 // Load environment variables
 dotenv.config();
@@ -48,7 +49,10 @@ const isAllowedOrigin = (origin) => {
   if (!isProduction && localNet.test(origin)) return true;
   return false;
 };
-app.use(cors({
+
+// PayU calls your backend callbacks server-to-server and may include an Origin header.
+// We must not block these callbacks, otherwise users see a CORS error instead of the failure page.
+const strictCors = cors({
   origin: (origin, callback) => {
     // Allow non-browser requests (no origin), and any origin in the allowlist
     if (!origin || allowedOrigins.includes(origin)) {
@@ -64,7 +68,22 @@ app.use(cors({
   methods: ['GET','POST','PUT','DELETE','OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Range'],
   exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length']
-}));
+});
+
+const openCorsForPayUCallbacks = cors({
+  origin: true,
+  credentials: true,
+  methods: ['GET','POST','OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Range'],
+  exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length']
+});
+
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/orders/payment/')) {
+    return openCorsForPayUCallbacks(req, res, next);
+  }
+  return strictCors(req, res, next);
+});
 // Handle preflight
 // Note: Preflight requests are handled by CORS middleware above; no explicit app.options route needed
 app.use(helmet({
@@ -120,6 +139,7 @@ app.use('/api/upload', require('./routes/upload'));
 app.use('/api/categories', require('./routes/categories'));
 app.use('/api/lookbook', require('./routes/lookbook'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/contact', require('./routes/contact'));
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -147,4 +167,5 @@ app.use((req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`PayU: ${payuConfig?.isLive ? 'LIVE' : 'TEST'} (${payuConfig?.paymentUrl || 'no paymentUrl'})`);
 });
